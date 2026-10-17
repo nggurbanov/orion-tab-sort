@@ -38,5 +38,5 @@ else
     my validateRuntime(hostObject)
 end if
 -- The bridge has no permanent timer or automatic startup helper.
-if not (hostObject's reconnect:(missing value) as boolean) then error (hostObject's valueForKey:"reconnectError") as text
+if not ((hostObject's reconnect:(missing value)) as boolean) then error (hostObject's valueForKey:"reconnectError") as text
 return "Native sorter connected on demand."

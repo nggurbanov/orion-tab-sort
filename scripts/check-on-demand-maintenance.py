@@ -10,6 +10,9 @@ engine = (root / "native/Bridge.applescript").read_text()
 handlers = engine[engine.index("    on requestConnection:"):engine.index("    on findViews(")]
 loader = (root / "native/templates/install-bridge.applescript").read_text()
 sidebar = (root / "native/templates/open-sidebar.applescript").read_text()
+bootstrap_guards = [line for line in loader.splitlines() if line.startswith("if not ") and "reconnect:" in line]
+assert len(bootstrap_guards) == 1
+bootstrap_guard = bootstrap_guards[0]
 assert "timerWithTimeInterval:1 target:hostObject" not in loader
 assert "set qaBundle" not in sidebar
 assert 'selector:"captureDeadlineFired:"' in engine
@@ -34,10 +37,11 @@ with tempfile.TemporaryDirectory(prefix="orion-on-demand-maintenance-") as direc
     property sidebarRequested : false
     property connectionAttempts : 0
     property reconnectCalls : 0
+    property reconnectResult : true
     property cancellations : 0
     on reconnect:ignored
         set my reconnectCalls to my reconnectCalls + 1
-        return true
+        return my reconnectResult
     end reconnect:
     on cancelCapture(payload)
         if not (((payload's objectForKey:"token")'s isEqual:my captureToken) as boolean) then error "Wrong capture restored"
@@ -56,6 +60,22 @@ use framework "AppleScriptObjC"
 set bundleObject to current application's NSBundle's bundleWithPath:"BUNDLE"
 bundleObject's loadAppleScriptObjectiveCScripts()
 set fixture to (current application's NSClassFromString("OnDemandWatchdogFixture"))'s alloc()'s init()
+-- Execute the exact installer call site, including its Boolean coercion.
+set hostObject to fixture
+BOOTSTRAP_GUARD
+if (fixture's valueForKey:"reconnectCalls") as integer is not 1 then error "Bootstrap never called reconnect"
+fixture's setValue:false forKey:"reconnectResult"
+fixture's setValue:"Fixture connection refused" forKey:"reconnectError"
+set refusalObserved to false
+try
+    BOOTSTRAP_GUARD
+on error errorText
+    if errorText is not "Fixture connection refused" then error "Bootstrap hid reconnect refusal: " & errorText
+    set refusalObserved to true
+end try
+if not refusalObserved then error "Bootstrap accepted a refused reconnect"
+fixture's setValue:true forKey:"reconnectResult"
+
 fixture's setValue:"A" forKey:"captureToken"
 fixture's setValue:(current application's NSDate's dateWithTimeIntervalSinceNow:0.02) forKey:"captureDeadline"
 fixture's armCaptureWatchdog:(missing value)
@@ -83,7 +103,7 @@ if (fixture's valueForKey:"reconnectCalls") as integer is not (finishedCalls as 
 fixture's setValue:false forKey:"sidebarRequested"
 fixture's requestConnection:(missing value)
 if (fixture's valueForKey:"reconnectTimer") is not missing value then error "Connected panel started a poller"
-return "OnDemand shipped handlers: deadline restoration, stale timer, completed capture, bounded retries, idle quiescence and no-poll reconnect passed."
-'''.replace("BUNDLE", str(resources.parent.parent)))
+return "OnDemand shipped handlers: deadline restoration, stale timer, completed capture, bounded retries, idle quiescence, no-poll reconnect and exact installer success/refusal passed."
+'''.replace("BUNDLE", str(resources.parent.parent)).replace("BOOTSTRAP_GUARD", bootstrap_guard))
     result = subprocess.run(["osascript", str(runner)], text=True, capture_output=True, timeout=20, check=True)
     print(result.stdout.strip())
