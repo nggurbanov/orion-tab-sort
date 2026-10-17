@@ -14,7 +14,7 @@ The selected reference is **A · Outline**. Its flat offwhite/ink/green material
 | Hover | `#e8ede7` | `#373e35` |
 | Recovery text | `#85372d` | `#f0b3a6` |
 
-Typography: `-apple-system, BlinkMacSystemFont, sans-serif`; body/title rows 13 px, controls/labels 12 px, domain/secondary hints 11 px, compact heading 15 px/650. No external fonts. Corners 5 px; control minimum padding 7 × 9 px; layout spacing 4/6/8/10/12/14/18 px. Fine 1 px separators; no decorative shadows, cards, gradients or art.
+Typography: `-apple-system, BlinkMacSystemFont, sans-serif`; body/title rows and standalone fields 13 px, default buttons/labels/search 12 px, mode/recovery buttons and domain/secondary hints 11 px, moved/duplicate hints 10 px (moved hints 9 px at widths up to 300 px), compact heading 15 px/650. No external fonts. Default control corners 5 px; tree toggles use 3 px and joined view controls square their shared corners. Default buttons use 7 × 9 px padding, fields 7 × 8 px, refresh 6 px, mode controls 4 × 5 px and tree toggles 3 × 0 px; quiet controls remove left padding. The recurring layout-spacing subset is 4/6/8/10/12/14/18 px, with smaller component-specific offsets. Fine 1 px separators; no decorative shadows, cards, gradients or art.
 
 Auto: compact heading/mode choice, explicit group selector, honest status/progress and one primary action slot beside them; quiet secondary settings/recovery follow without a forced blank viewport. The slot changes Organize → Cancel generation → disabled Applying → Undo. Verified success replaces it with Undo and quiet Keep this order. No manual confirmation between AI and guarded Apply; the initial click grants that scope.
 
