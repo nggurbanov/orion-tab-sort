@@ -8,7 +8,7 @@
     "fontFamily": "-apple-system, BlinkMacSystemFont, sans-serif",
     "fontSize": {"heading":15,"bodyAndStandaloneField":13,"buttonLabelAndSearch":12,"modeRecoveryAndSecondary":11,"movedAndDuplicateHint":10,"narrowMovedHint":9},
     "radius":{"default":5,"treeToggle":3,"joinedViewControlInner":0},"separatorWidth":1,"focusWidth":2,
-    "spacing":[4,6,8,10,12,14,18],"spacingScope":"Recurring layout-spacing subset; component-specific offsets also exist.","reviewWidths":[280,360,480,640],
+    "spacing":[4,6,8,10,12,14,16,18,24],"spacingScope":"Recurring layout-spacing subset; component-specific offsets also exist.","reviewWidths":[280,360,480,640],"surfacePadding":{"top":24,"side":16,"narrowSide":12,"headerBottom":4},
     "controlPadding":{"defaultButton":"7px 9px","field":"7px 8px","refresh":"6px","mode":"4px 5px","treeToggle":"3px 0","quietLeft":"0"}
   },
   "defaults":{"mode":"auto","theme":"system","scope":"focused native group"},
