@@ -36,6 +36,7 @@ script OrionNativeTreeBridgeV3R49
     property transactionID : missing value
     property partialSnapshot : missing value
     property recoveryArchive : missing value
+    property retainedInspection : missing value
     property attachedControllers : missing value
     property reconnectTimer : missing value
     property connectionAttempts : 0
@@ -704,6 +705,7 @@ script OrionNativeTreeBridgeV3R49
     end writeJournal
 
     on clearTransaction()
+        set my retainedInspection to missing value
         set my beforeSnapshot to missing value
         set my appliedSnapshot to missing value
         set my partialSnapshot to missing value
@@ -1224,6 +1226,186 @@ script OrionNativeTreeBridgeV3R49
         return current application's NSDictionary's dictionaryWithObjects:{journalObject, dataObject's base64EncodedStringWithOptions:0} forKeys:{"journal", "journalRevision"}
     end inspectJournal
 
+    -- Snapshot failure is an observation, never proof of the current layout.
+    on retainedLiveObservation()
+        try
+            set liveSnapshot to my snapshot()
+        on error snapshotError
+            return current application's NSDictionary's dictionaryWithObjects:{false, current application's NSNull's |null|(), snapshotError} forKeys:{"available", "revision", "snapshotError"}
+        end try
+        return current application's NSDictionary's dictionaryWithObjects:{true, liveSnapshot's objectForKey:"revision", liveSnapshot} forKeys:{"available", "revision", "snapshot"}
+    end retainedLiveObservation
+
+    on retainedValue(valueObject)
+        if valueObject is missing value then return current application's NSNull's |null|()
+        return valueObject
+    end retainedValue
+
+    on retainedTransactionEvidence()
+        if my captureToken is not missing value then error "Complete or cancel the pending capture first"
+        if my transactionPhase is "idle" or my transactionID is missing value or my beforeSnapshot is missing value then error "No retained transaction to abandon"
+        return current application's NSDictionary's dictionaryWithObjects:{1, my transactionID, my transactionPhase, my retainedValue(my sessionKey), my beforeSnapshot, my retainedValue(my appliedSnapshot), my retainedValue(my partialSnapshot), my retainedValue(my recoveryArchive), my retainedValue(my persistentIdentity), my retainedValue(my nativeUUIDBindings), my retainedValue(my identityHistories)} forKeys:{"version", "transactionID", "transactionPhase", "sessionKey", "before", "applied", "partial", "recoveryArchive", "identity", "nativeUUIDBindings", "identityHistories"}
+    end retainedTransactionEvidence
+
+    on inspectRetainedTransaction(payload)
+        set evidence to my retainedTransactionEvidence()
+        set inspectedJournal to my inspectJournal(payload)
+        set journalObject to inspectedJournal's objectForKey:"journal"
+        if not ((journalObject's isKindOfClass:(current application's NSDictionary)) as boolean) then error "Invalid journal object"
+        set versionObject to journalObject's objectForKey:"version"
+        if versionObject is missing value then error "Journal version missing"
+        if not ((versionObject's isKindOfClass:(current application's NSNumber)) as boolean) then error "Invalid journal version"
+        if not ((versionObject's isEqualToNumber:1) as boolean) and not ((versionObject's isEqualToNumber:2) as boolean) then error "Unsupported journal version"
+        set identityObject to journalObject's objectForKey:"identity"
+        if identityObject is missing value then error "Journal identity missing"
+        if not ((identityObject's isKindOfClass:(current application's NSDictionary)) as boolean) then error "Invalid journal identity"
+        set inspection to current application's NSDictionary's dictionaryWithObjects:{current application's NSUUID's UUID()'s UUIDString(), my transactionID, my transactionPhase, inspectedJournal's objectForKey:"journalRevision", versionObject, identityObject, journalObject, my retainedLiveObservation()} forKeys:{"inspectionToken", "transactionID", "transactionPhase", "journalRevision", "journalVersion", "journalIdentity", "journal", "live"}
+        -- Freeze the entire graph: mutable snapshots must not silently update a token.
+        set recordObject to current application's NSDictionary's dictionaryWithObjects:{inspection, evidence} forKeys:{"inspection", "evidence"}
+        set recordData to current application's NSJSONSerialization's dataWithJSONObject:recordObject options:0 |error|:(missing value)
+        if recordData is missing value then error "Could not preserve retained inspection"
+        set frozenRecord to current application's NSJSONSerialization's JSONObjectWithData:recordData options:0 |error|:(missing value)
+        if frozenRecord is missing value or not ((recordObject's isEqualToDictionary:frozenRecord) as boolean) then error "Retained inspection verification failed"
+        set my retainedInspection to frozenRecord
+        return frozenRecord's objectForKey:"inspection"
+    end inspectRetainedTransaction
+
+    on validateRetainedAbandonment(payload)
+        set evidence to my retainedTransactionEvidence()
+        set confirmed to payload's objectForKey:"confirmed"
+        if confirmed is missing value then error "Explicit user confirmation required"
+        if (current application's NSStringFromClass(confirmed's |class|()) as text) is not "__NSCFBoolean" then error "Explicit boolean confirmation required"
+        if not (confirmed as boolean) then error "Explicit user confirmation required"
+        if my retainedInspection is missing value then error "Inspect the retained transaction first"
+        set inspection to my retainedInspection's objectForKey:"inspection"
+        repeat with fieldPair in {{"inspectionToken", "inspectionToken"}, {"expectedTransactionID", "transactionID"}, {"expectedJournalRevision", "journalRevision"}, {"expectedJournalVersion", "journalVersion"}, {"expectedJournalIdentity", "journalIdentity"}}
+            set supplied to payload's objectForKey:(item 1 of fieldPair)
+            if supplied is missing value then error "Missing abandonment confirmation field: " & item 1 of fieldPair
+            if not ((supplied's isEqual:(inspection's objectForKey:(item 2 of fieldPair))) as boolean) then error "Retained inspection changed: " & item 1 of fieldPair
+        end repeat
+        if not ((evidence's isEqualToDictionary:(my retainedInspection's objectForKey:"evidence")) as boolean) then error "Retained transaction changed; inspect again"
+        set dataObject to current application's NSData's dataWithContentsOfFile:journalPath
+        if dataObject is missing value then error "Inspected journal missing"
+        if not (((dataObject's base64EncodedStringWithOptions:0)'s isEqual:(inspection's objectForKey:"journalRevision")) as boolean) then error "Inspected journal changed"
+        set expectedLive to inspection's objectForKey:"live"
+        set suppliedAvailable to payload's objectForKey:"expectedLiveAvailable"
+        if suppliedAvailable is missing value then error "Inspected live availability required"
+        if (current application's NSStringFromClass(suppliedAvailable's |class|()) as text) is not "__NSCFBoolean" then error "Explicit boolean live availability required"
+        if not ((suppliedAvailable's isEqual:(expectedLive's objectForKey:"available")) as boolean) then error "Inspected live availability changed"
+        set suppliedRevision to payload's objectForKey:"expectedRevision"
+        if suppliedRevision is missing value then error "Inspected live revision or null required"
+        if not ((suppliedRevision's isEqual:(expectedLive's objectForKey:"revision")) as boolean) then error "Inspected live revision changed"
+        set liveObservation to my retainedLiveObservation()
+        if not (((liveObservation's objectForKey:"available")'s isEqual:(expectedLive's objectForKey:"available")) as boolean) then error "Live availability changed; inspect again"
+        if (suppliedAvailable as boolean) then
+            if not ((liveObservation's isEqualToDictionary:expectedLive) as boolean) then error "Live layout changed; inspect again"
+        end if
+        -- Two unavailable observations prove no layout equality. Explicitly abandon
+        -- restoration regardless, preserving the error from the user's inspection.
+        return dataObject
+    end validateRetainedAbandonment
+
+    -- Thin filesystem boundaries; archive decisions and verification stay above them.
+    on createProtectedDirectory(pathText)
+        return current application's NSFileManager's defaultManager()'s createDirectoryAtPath:pathText withIntermediateDirectories:false attributes:(current application's NSDictionary's dictionaryWithObject:448 forKey:(current application's NSFilePosixPermissions)) |error|:(missing value)
+    end createProtectedDirectory
+
+    on writeProtectedFile(pathText, dataObject)
+        return current application's NSFileManager's defaultManager()'s createFileAtPath:pathText |contents|:dataObject attributes:(current application's NSDictionary's dictionaryWithObject:384 forKey:(current application's NSFilePosixPermissions))
+    end writeProtectedFile
+
+    on archiveFileData(pathText)
+        return current application's NSData's dataWithContentsOfFile:pathText
+    end archiveFileData
+
+    on archiveFilePermissions(pathText)
+        set attributes to current application's NSFileManager's defaultManager()'s attributesOfItemAtPath:pathText |error|:(missing value)
+        if attributes is missing value then error "Could not inspect archive protection"
+        return attributes's objectForKey:(current application's NSFilePosixPermissions)
+    end archiveFilePermissions
+
+    on archiveRetainedEvidence(originalData)
+        set archiveRoot to journalPath & ".abandoned-" & (current application's NSUUID's UUID()'s UUIDString() as text)
+        if not (my createProtectedDirectory(archiveRoot) as boolean) then error "Could not create protected abandonment archive"
+        if (my archiveFilePermissions(archiveRoot) as integer) is not 448 then error "Abandonment archive directory is not protected"
+        set evidenceObject to current application's NSDictionary's dictionaryWithObjects:{"abandoned", "Undo/recovery explicitly abandoned; restoration and current layout not verified", my retainedInspection} forKeys:{"resolutionKind", "resolution", "retainedInspection"}
+        set evidenceData to current application's NSJSONSerialization's dataWithJSONObject:evidenceObject options:2 |error|:(missing value)
+        if evidenceData is missing value then error "Could not encode retained evidence"
+        set decoded to current application's NSJSONSerialization's JSONObjectWithData:evidenceData options:0 |error|:(missing value)
+        if decoded is missing value or not ((decoded's isEqualToDictionary:evidenceObject) as boolean) then error "Retained evidence encoding changed data"
+        set originalPath to archiveRoot & "/original-journal.json"
+        set evidencePath to archiveRoot & "/retained-evidence.json"
+        repeat with filePair in {{originalPath, originalData}, {evidencePath, evidenceData}}
+            set pathText to item 1 of filePair
+            set expectedData to item 2 of filePair
+            if not (my writeProtectedFile(pathText, expectedData) as boolean) then error "Could not write abandonment archive"
+        end repeat
+        set archivePaths to current application's NSDictionary's dictionaryWithObjects:{originalPath, evidencePath} forKeys:{"archive", "evidenceArchive"}
+        set archiveRecord to current application's NSDictionary's dictionaryWithObjects:{archivePaths, evidenceData} forKeys:{"paths", "evidenceData"}
+        my verifyRetainedArchive(archiveRecord, originalData)
+        return archiveRecord
+    end archiveRetainedEvidence
+
+    on verifyRetainedArchive(archiveRecord, originalData)
+        set archivePaths to archiveRecord's objectForKey:"paths"
+        set originalPath to archivePaths's objectForKey:"archive"
+        if (my archiveFilePermissions(originalPath's stringByDeletingLastPathComponent()) as integer) is not 448 then error "Abandonment archive directory is not protected"
+        repeat with filePair in {{originalPath, originalData}, {archivePaths's objectForKey:"evidenceArchive", archiveRecord's objectForKey:"evidenceData"}}
+            set pathText to item 1 of filePair
+            set expectedData to item 2 of filePair
+            if (my archiveFilePermissions(pathText) as integer) is not 384 then error "Abandonment evidence is not protected"
+            set savedData to my archiveFileData(pathText)
+            if savedData is missing value or not ((savedData's isEqualToData:expectedData) as boolean) then error "Abandonment archive byte verification failed"
+        end repeat
+    end verifyRetainedArchive
+
+    on releaseAbandonedContext()
+        -- Only the old captured scope. Keep session identity maps, connections and UI.
+        set my contextItems to missing value
+        set my persistentIdentity to missing value
+        set my nativeUUIDBindings to missing value
+        set my exposureCandidates to missing value
+        set my capturedPinnedObjects to missing value
+        set my selectionWrapperToken to missing value
+        set my identityViews to missing value
+        set my identityHistories to missing value
+        set my identityRequestedAt to missing value
+        set my captureRows to missing value
+        set my captureWrappers to missing value
+        set my captureExpanded to missing value
+        set my captureRootExpanded to missing value
+        set my captureScrollPoint to missing value
+        set my captureBindingIDs to missing value
+        set my captureActiveHistory to missing value
+        set my captureDeadline to missing value
+        set my selectedIdentity to missing value
+        set my directNativeMode to false
+    end releaseAbandonedContext
+
+    on abandonRetainedTransaction(payload)
+        set originalData to my validateRetainedAbandonment(payload)
+        set archiveRecord to my archiveRetainedEvidence(originalData)
+        set archivePaths to archiveRecord's objectForKey:"paths"
+        -- Recheck after I/O; never overwrite journal/transaction changes during archiving.
+        my validateRetainedAbandonment(payload)
+        set inspection to my retainedInspection's objectForKey:"inspection"
+        set resolved to (inspection's objectForKey:"journal")'s mutableCopy()
+        resolved's setObject:"acknowledged" forKey:"phase"
+        resolved's setObject:"abandoned" forKey:"resolutionKind"
+        resolved's setObject:"Undo/recovery explicitly abandoned; restoration and current layout not verified" forKey:"resolution"
+        resolved's addEntriesFromDictionary:archivePaths
+        resolved's setObject:(inspection's objectForKey:"transactionID") forKey:"abandonedTransactionID"
+        my saveResolvedJournal(resolved)
+        set savedData to current application's NSData's dataWithContentsOfFile:journalPath
+        if savedData is missing value then error "Abandonment finalization missing; retained evidence preserved"
+        set savedJournal to current application's NSJSONSerialization's JSONObjectWithData:savedData options:0 |error|:(missing value)
+        if savedJournal is missing value or not ((savedJournal's isEqualToDictionary:resolved) as boolean) then error "Abandonment finalization verification failed; retained evidence preserved"
+        my verifyRetainedArchive(archiveRecord, originalData)
+        my clearTransaction()
+        my releaseAbandonedContext()
+        return current application's NSDictionary's dictionaryWithObjects:{true, true, false, false, inspection's objectForKey:"transactionID", archivePaths, resolved} forKeys:{"acknowledged", "abandoned", "restorationVerified", "currentLayoutVerified", "transactionID", "archives", "journal"}
+    end abandonRetainedTransaction
+
     on acknowledgeCurrent(payload)
         if my transactionPhase is not "idle" or my beforeSnapshot is not missing value or my appliedSnapshot is not missing value or my captureToken is not missing value then error "Resolve retained same-process state first"
         set confirmed to payload's objectForKey:"confirmed"
@@ -1500,6 +1682,8 @@ script OrionNativeTreeBridgeV3R49
         if commandName is "finishExposure" then return my finishExposure(payload)
         if commandName is "cancelCapture" then return my cancelCapture(payload)
         if commandName is "inspectJournal" then return my inspectJournal(payload)
+        if commandName is "inspectRetainedTransaction" then return my inspectRetainedTransaction(payload)
+        if commandName is "abandonRetainedTransaction" then return my abandonRetainedTransaction(payload)
         if commandName is "acknowledgeCurrent" then return my acknowledgeCurrent(payload)
         if commandName is "recoverRetained" then return my recoverRetained(payload)
         if commandName is "transactionStatus" then return my transactionStatus()
@@ -1578,7 +1762,7 @@ script OrionNativeTreeBridgeV3R49
         if (requestID's |length|() as integer) > 80 then return
         set replyObject to current application's NSMutableDictionary's dictionaryWithObject:requestID forKey:"id"
         try
-            if (commandValue as text) is not in {"scopes", "captureNative", "nativeSessionIdentity", "ping", "loadKey", "saveKey", "capture", "captureRecovery", "refreshIdentity", "persistentIdentity", "acceptCurrent", "recoveryJournal", "recover", "selectIdentity", "confirmIdentity", "finishCapture", "selectExposure", "confirmExposure", "finishExposure", "cancelCapture", "snapshot", "apply", "undo", "keep", "inspectJournal", "acknowledgeCurrent", "recoverRetained", "transactionStatus"} then error "Unsupported command"
+            if (commandValue as text) is not in {"scopes", "captureNative", "nativeSessionIdentity", "ping", "loadKey", "saveKey", "capture", "captureRecovery", "refreshIdentity", "persistentIdentity", "acceptCurrent", "recoveryJournal", "recover", "selectIdentity", "confirmIdentity", "finishCapture", "selectExposure", "confirmExposure", "finishExposure", "cancelCapture", "snapshot", "apply", "undo", "keep", "inspectJournal", "acknowledgeCurrent", "recoverRetained", "transactionStatus", "inspectRetainedTransaction", "abandonRetainedTransaction"} then error "Unsupported command"
             set payload to requestBody's objectForKey:"payload"
             if payload is missing value then set payload to current application's NSDictionary's dictionary()
             set resultObject to my performCommand(commandValue as text, payload)
@@ -1711,6 +1895,11 @@ script OrionNativeTreeBridgeV3R49
         my supportedHost()
         if my transactionPhase is not "idle" or my beforeSnapshot is not missing value then error "Resolve the previous transaction before selecting another scope"
         if my captureToken is not missing value then error "Complete or cancel the pending capture"
+        return my captureNativeScope(payload)
+    end captureNative
+
+    -- Private native lookup/capture boundary; transaction guards remain above it.
+    on captureNativeScope(payload)
         set windowNumber to payload's objectForKey:"windowId"
         if windowNumber is missing value then error "Selected native window missing"
         set matches to current application's NSMutableArray's array()
@@ -1776,7 +1965,7 @@ script OrionNativeTreeBridgeV3R49
         set my identityViews to current application's NSMutableDictionary's dictionary()
         set my identityHistories to current application's NSMutableDictionary's dictionary()
         return my snapshot()
-    end captureNative
+    end captureNativeScope
 
     on nativeSessionIdentity(payload)
         if not my directNativeMode then error "Native session capture required"

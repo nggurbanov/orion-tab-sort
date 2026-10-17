@@ -11,7 +11,10 @@ ROOT = Path(__file__).resolve().parents[1]
 def fixture_source(engine, checks):
     # Keep every production handler, including performCommand, validation and journal encoding.
     # Rename exactly these native/I/O boundaries so synthetic overrides can inject faults.
-    for name in ('snapshot', 'applyLayout', 'writeJournal', 'saveResolvedJournal', 'protectedJournalArchive', 'restoreRootExpansion'):
+    for name in ('snapshot', 'applyLayout', 'writeJournal', 'saveResolvedJournal',
+                 'protectedJournalArchive', 'restoreRootExpansion', 'supportedHost',
+                 'captureNativeScope', 'createProtectedDirectory', 'writeProtectedFile',
+                 'archiveFileData', 'archiveFilePermissions'):
         pattern = rf'(?m)^(    (?:on|end) ){name}(?=\(|\s|$)'
         engine, count = re.subn(pattern, rf'\1production_{name}', engine)
         if count != 2:
