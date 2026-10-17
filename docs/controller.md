@@ -2,11 +2,13 @@
 
 The sidebar defaults to **Auto**. Its Organize tabs button authorizes capture → AI proposal → stale-tree/identity preflight → Apply within the selected group. No-change returns without Apply. **Advanced** shares that path through proposal, then requires Apply changes. Switching modes while idle preserves the preview and native transaction; switching during an operation is blocked. Auto always recaptures before a new proposal.
 
-The controller requires `ping.host === "AppleScriptObjC native tree V3R49"` and complete `canUndo`, `needsRecovery`, `transactionPhase`, `journalPhase` state. Unsupported/malformed replies block mutation and provide update/reconnect help. The supported Orion build is enforced natively. The scope selector starts from the focused group, stays visible and freezes while busy or retaining Undo/recovery.
+The controller requires `ping.host === "AppleScriptObjC native tree V3R49"` and complete `canUndo`, `needsRecovery`, `transactionPhase`, `journalPhase` state. Unsupported/malformed replies block mutation and provide update/reconnect help. The supported Orion build is enforced natively. The scope selector starts from the focused group and stays visible. It freezes while busy, holding a native transaction or awaiting an unknown mutation outcome. An idle prior-session journal permits explicit group selection for inspection; changing the selection invalidates the preview, inspection and confirmation. An empty selection cannot be captured.
 
 Settings and the credential form one immutable pair before any asynchronous step. All editable provider settings lock during work. Endpoint changes clear the displayed key and load only that origin’s Keychain entry. Provider permission requests use the precise endpoint host pattern. HTTPS and HTTP localhost/127.0.0.1 match manifest/CSP; IPv6 loopback is deliberately rejected. Fetch omits cookies, rejects redirects and uses no cache.
 
 An external AbortSignal propagates through provider stages, format retries, batches and fetch. Cancel generation never sends native cancellation for Apply/Undo/recovery; it stops additional AI requests and ignores stale progress/results. No overall percentage or estimated duration is invented.
+
+When idle status reports a completed applied journal without retained Undo, connection initialization asks the native recoveryJournal handler to normalize it. Only the bridge can retire a completed sort from another native session; the controller consumes its current reply state. Unfinished journals remain blocked. Accept current layout also checks normalization before capture, so an already retired journal is not sent to the applied-only acceptance handler. Archival errors retain recovery and are shown as failures.
 
 ## Native timeout
 

@@ -95,6 +95,11 @@
     // Advanced actions follow the tree and compact secondary controls.
     if (mode === 'auto') $('advanced')?.before?.(actionBar);else $('secondary')?.after?.(actionBar);
   }
+  function scopeSelectionLocked() {
+    // Prior-process journals hold evidence, not native objects in this process.
+    // Retained transactions and unknown mutation outcomes still freeze scope.
+    return busy || canUndo || transactionPhase !== 'idle' || unknown;
+  }
   function enableControls() {
     const blocked = busy || unknown || !connected || !supported;
     controls.forEach(id => {
@@ -103,7 +108,7 @@
     editable.forEach(id => {
       if ($(id)) $(id).disabled = busy;
     });
-    $('window').disabled = busy || canUndo || needsRecovery || unknown;
+    $('window').disabled = scopeSelectionLocked();
     $('apply').disabled = blocked || !proposal || journalPending || canUndo;
     $('undo').disabled = blocked || !canUndo;
     $('keep').disabled = blocked || !canUndo;
@@ -240,6 +245,9 @@
       throw new Error('R49 transaction status is unavailable. Update and reopen the bridge.');
     }
     authoritative(state);
+    // The bridge alone decides whether a completed journal belongs to an old
+    // native session. Consume its current reply envelope, never infer resolution.
+    if (!unknown && !canUndo && transactionPhase === 'idle' && journalPhase === 'applied') await request('recoveryJournal');
   }
   async function reconcile() {
     if (reconciling) return;
@@ -481,6 +489,8 @@
     return value;
   }
   async function capture(recovery = false) {
+    const selected = $('window').value;
+    if (scopeUnavailable || !selected || !Number.isSafeInteger(Number(selected)) || Number(selected) <= 0 || nativeMode && !scopeTokens.has(Number(selected))) throw new Error('Choose a visible target group before reading or inspecting recovery.');
     snapshot = null;
     proposal = null;
     recoveryPlan = null;
@@ -808,12 +818,19 @@
         }
         if (action === 'acceptCurrent') {
           if (transactionPhase !== 'idle' || journalPhase !== 'applied') throw new Error('Inspect unresolved recovery first.');
-          await capture(true);
-          await persistentIdentity(true);
-          const result = await request('acceptCurrent', {
-            expectedRevision: snapshot.revision
-          });
-          if (result.accepted !== true || needsRecovery || transactionPhase !== 'idle') throw new Error('Journal archival was not confirmed. Inspect recovery.');
+          const journal = await request('recoveryJournal');
+          if (journal.phase === 'accepted' && journalPhase === 'accepted' && !needsRecovery && !canUndo && transactionPhase === 'idle') {
+            // Native-session retirement already archived the completed sort.
+            // Do not capture or send applied-only acceptCurrent after that transition.
+          } else {
+            if (journal.phase !== 'applied' || journalPhase !== 'applied' || transactionPhase !== 'idle') throw new Error('Journal changed. Inspect recovery again.');
+            await capture(true);
+            await persistentIdentity(true);
+            const result = await request('acceptCurrent', {
+              expectedRevision: snapshot.revision
+            });
+            if (result.accepted !== true || needsRecovery || transactionPhase !== 'idle') throw new Error('Journal archival was not confirmed. Inspect recovery.');
+          }
           clearResolved();
           await saveCheckpoint({
             phase: 'accepted'
@@ -933,7 +950,7 @@
     run('loadKey');
   });
   $('window').addEventListener('change', () => {
-    if (busy || canUndo || needsRecovery || unknown) return;
+    if (scopeSelectionLocked()) return;
     scopeToken = scopeTokens.get(Number($('window').value)) ?? null;
     scopeUnavailable = !$('window').value;
     clearResolved();

@@ -12,9 +12,17 @@ Open the target group and Orion’s vertical tab sidebar, then open **Native Tre
 - **Advanced**: **Read tree → Review with AI → Apply changes**. Search titles/domains and compare current/proposed hierarchy before applying. Preview collapse/search does not change Orion.
 - After verified Apply, use **Undo** to restore the original tree or **Keep this order** to finish the transaction. Finish it before switching groups. Cancellation is available only during proposal work, never native mutation.
 
-The native guards preserve tab objects, pinned tabs, selection, navigation history, sibling order and expansion. Sleeping tabs and duplicate URLs are included. These guarantees still require live acceptance against the supported signed browser; a passing synthetic fixture is not that proof.
+Apply can reorganize ordinary tabs and their sibling order according to the reviewed or Auto-generated plan. The native guards preserve tab objects, pinned tabs, selection and navigation history; Undo restores the original parent relationships, sibling order and expansion. Sleeping tabs and duplicate URLs are included. These guarantees still require live acceptance against the supported signed browser; a passing synthetic fixture is not that proof.
 
 The bridge runs on demand, without a permanent background view scan or automatic startup agent.
+
+## Sidebar preview
+
+Actual UI captures from the [synthetic demo](demo/README.md), using fictional tabs and simulated bridge/AI responses. These screenshots show Auto ready to organize and Advanced reviewing a proposal; they are not live Orion verification or generated mockups.
+
+| Auto | Advanced |
+| --- | --- |
+| <img src="docs/images/auto-demo.png" alt="Synthetic demo: Auto mode with one Organize tabs action" width="300"> | <img src="docs/images/advanced-demo.png" alt="Synthetic demo: Advanced mode reviewing the proposed hierarchy before Apply" width="300"> |
 
 ## Development
 
@@ -69,6 +77,6 @@ To uninstall, resolve or explicitly inspect retained state first. Remove the ext
 
 ## Source
 
-[MIT license](LICENSE), copyright 2026 nggurbanov. `package.json` stays private to prevent accidental npm publication; that does not restrict the MIT source license. Public repository visibility is a separate owner action after review.
+[MIT license](LICENSE), copyright 2026 nggurbanov. `package.json` stays private to prevent accidental npm publication; that does not restrict the MIT source license.
 
 See [contributing](CONTRIBUTING.md), [architecture](docs/architecture.md), [controller](docs/controller.md), [design](DESIGN.md), [verification](docs/sidebar-verification.md), [memory behavior](docs/memory.md) and [changelog](CHANGELOG.md). Machine-local configuration, binaries, personal snapshots and historical prototype workspaces are excluded.

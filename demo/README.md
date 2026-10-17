@@ -1,6 +1,6 @@
 # Synthetic controller demo
 
-Run `npm run demo` on the development machine. The server binds only `127.0.0.1:4877`. Forward that port when reviewing remotely; open `/demo/` in the parent’s T3 preview.
+Run `npm run demo` on the development machine. The server binds only `127.0.0.1:4877`. Forward that port when reviewing remotely; open `/demo/` in a browser.
 
 The server serves actual `extension/sorter.html`, CSS, controller, planner, provider-settings and tree-view scripts. Only browser/native transport and AI proposal boundaries are synthetic. Demo CSP uses `connect-src 'none'`, `img-src 'none'`; no live Orion, external favicon, API key or network AI is used. The demo files are outside the extension ZIP allowlist.
 

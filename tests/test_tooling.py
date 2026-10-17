@@ -59,7 +59,7 @@ class ToolingTests(unittest.TestCase):
         engine = (ROOT / "native/Bridge.applescript").read_text()
         checks = (ROOT / "scripts/check-native-transactions.applescript").read_text()
         fixture = transactions.fixture_source(engine, checks)
-        for name in ("performCommand", "compensateLayout", "recoverRetained", "acknowledgeCurrent", "recoverLayout", "transactionStatus"):
+        for name in ("performCommand", "compensateLayout", "recoverRetained", "acknowledgeCurrent", "recoverLayout", "transactionStatus", "recoveryJournal"):
             start = engine.index(f"    on {name}(")
             end = engine.index(f"    end {name}", start) + len(f"    end {name}")
             shipped = "\n".join(line.removeprefix("    ") for line in engine[start:end].splitlines())

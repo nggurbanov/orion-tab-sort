@@ -22,4 +22,4 @@ Advanced: same scope/controller with status/progress above the tree and one cont
 
 Both: 280/360/480 px and wider layout, system light/dark, 2 px green focus outline, themed selection/caret/scrollbar, no required animation and reduced-motion support. Unknown phases are indeterminate; only actual batch counts appear. Settings and mode controls lock during work. Recovery inspection presents phase/live availability and consequences without native IDs or raw JSON. Mutation confirmation is tied to the actual inspected evidence.
 
-Visual/keyboard checks in a real browser are owned by the parent reviewer; initial findings and the confirmation-capture boundary are recorded in docs/sidebar-verification.md. The deterministic demo supports every major phase and long/deep fixtures; passing Node tests alone does not establish those visual checks.
+Reproducible visual/keyboard checks and their limits are recorded in [verification](docs/sidebar-verification.md). The deterministic demo supports every major phase and long/deep fixtures; passing Node tests alone does not establish those visual checks.

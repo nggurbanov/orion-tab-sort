@@ -288,6 +288,29 @@ async function harness(options = {}) {
             });
             return;
           }
+          // Model the shipped native-session retirement, including its new
+          // authoritative envelope. A retained Apply must never be retired.
+          const retireCompleted = () => {
+            if (options.nativeScope && !nativeState.modified && !nativeState.recovery && (nativeState.phase || options.journalPhase) === 'applied' && nativeState.journalSession !== 'current') {
+              if (options.retirementFailure) throw new Error('Injected completed archive failure');
+              nativeState.phase = 'accepted';
+              nativeState.archived = true;
+            }
+          };
+          if (request.command === 'captureNative' && ![777].includes(request.payload.windowId)) {
+            respond({ id: request.id, ok: false, error: 'Selected native window closed or ambiguous' });
+            return;
+          }
+          if (request.command === 'recoveryJournal' || request.command === 'acceptCurrent') {
+            try { retireCompleted(); } catch (error) {
+              respond({ id: request.id, ok: false, error: error.message });
+              return;
+            }
+          }
+          if (request.command === 'acceptCurrent' && (nativeState.phase || options.journalPhase) !== 'applied') {
+            respond({ id: request.id, ok: false, error: 'Only a completed applied journal can be accepted' });
+            return;
+          }
           if (request.command === 'apply') {
             nativeState.modified = true;
             nativeState.phase = 'applied';
@@ -333,7 +356,7 @@ async function harness(options = {}) {
             } : request.command === 'saveKey' ? {
               saved: true
             } : request.command === 'recoveryJournal' ? {
-              phase: options.journalPhase || 'undone'
+              phase: nativeState.phase || options.journalPhase || 'undone'
             } : request.command === 'keep' || request.command === 'acceptCurrent' ? {
               accepted: true,
               archivePath: '/private/archive'
@@ -587,7 +610,7 @@ test('persistent identity refusal prevents the AI request before showing a previ
   assert.equal(h.elements.apply.disabled, true);
   assert.match(h.status(), /UUID snapshot refused/);
 });
-test('applied journal after restart permits reading, blocks AI and offers explicit current-tree acceptance', async () => {
+test('legacy applied journal after restart permits reading, blocks AI and offers explicit current-tree acceptance', async () => {
   const h = await harness({
     journalPhase: 'applied'
   });
@@ -1231,6 +1254,7 @@ test('prior-session acknowledgment sends exact journal bytes and live revision, 
   };
   const h = await harness({
     nativeScope: true,
+    noFocusedScope: true,
     journalPhase: 'prepared',
     intercept: (r, c) => {
       if (r.command === 'inspectJournal') {
@@ -1262,7 +1286,21 @@ test('prior-session acknowledgment sends exact journal bytes and live revision, 
       }
     }
   });
+  assert.equal(h.elements.window.value, '');
+  assert.equal(h.elements.window.disabled, false);
+  assert.equal(h.context.window.OrionSorter.getState().needsRecovery, true);
   await h.click('inspectPrior');
+  assert.match(h.status(), /Choose a visible target group/);
+  assert.equal(count(h, 'captureNative'), 0);
+  assert.equal(count(h, 'inspectJournal'), 0);
+  h.elements.window.value = '777';
+  h.elements.window.change();
+  await h.click('inspectPrior');
+  h.elements.recoveryConfirmed.checked = true;
+  // Changing scope, even re-selecting the same option, invalidates consent.
+  h.elements.window.change();
+  assert.equal(h.elements.recoveryConfirmed.checked, false);
+  assert.equal(h.elements.acknowledge.disabled, true);
   await h.click('acknowledge');
   assert.equal(count(h, 'acknowledgeCurrent'), 0);
   await h.click('inspectPrior');
@@ -1557,4 +1595,62 @@ test('empty and no-change trees consistently select Current and disable an unava
   assert.equal(h.elements.viewCurrent['aria-pressed'], 'true');
   assert.equal(h.elements.viewProposed['aria-pressed'], 'false');
   assert.equal(h.elements.viewProposed.disabled, true);
+});
+
+test('completed prior native-session journal is retired before startup controls unlock', async () => {
+  const h = await harness({ nativeScope: true, auto: true, journalPhase: 'applied' });
+  assert.equal(count(h, 'recoveryJournal'), 1);
+  assert.equal(h.nativeState.archived, true);
+  assert.equal(h.context.window.OrionSorter.getState().needsRecovery, false);
+  assert.equal(h.elements.journalNotice.hidden, true);
+  assert.equal(h.elements.organize.disabled, false);
+  assert.equal(h.elements.acceptCurrent.disabled, true);
+  assert.equal(count(h, 'captureNative'), 0);
+  assert.equal(count(h, 'acceptCurrent'), 0);
+  await h.click('organize');
+  assert.equal(count(h, 'apply'), 1);
+});
+test('completed journal normalization cannot retire unfinished or retained native state', async () => {
+  for (const journalPhase of ['prepared', 'undoing', 'rollingBack', 'recoveryRequired']) {
+    const h = await harness({ nativeScope: true, journalPhase });
+    assert.equal(count(h, 'recoveryJournal'), 0);
+    assert.equal(h.context.window.OrionSorter.getState().needsRecovery, true);
+    assert.equal(h.elements.organize.disabled, true);
+    assert.equal(h.nativeState.archived, undefined);
+  }
+  const h = await harness({ nativeScope: true, journalPhase: 'applied', nativeState: { modified: true } });
+  assert.equal(count(h, 'recoveryJournal'), 0);
+  assert.equal(h.elements.window.disabled, true);
+  assert.equal(h.elements.undo.disabled, false);
+  assert.equal(h.nativeState.archived, undefined);
+});
+test('failed completed-native archival keeps recovery blocked and reports its failure', async () => {
+  const h = await harness({ nativeScope: true, journalPhase: 'applied', retirementFailure: true });
+  assert.equal(h.context.window.OrionSorter.getState().needsRecovery, true);
+  assert.equal(h.elements.organize.disabled, true);
+  assert.equal(h.nativeState.archived, undefined);
+  assert.match(h.status(), /archive failure/);
+});
+test('accept-current consumes native retirement without issuing applied-only acceptance', async () => {
+  const nativeState = { modified: false, journalSession: 'current' };
+  const h = await harness({ nativeScope: true, journalPhase: 'applied', nativeState });
+  assert.equal(h.elements.acceptCurrent.disabled, false);
+  nativeState.journalSession = 'prior';
+  await h.click('acceptCurrent');
+  assert.equal(nativeState.archived, true);
+  assert.equal(count(h, 'acceptCurrent'), 0);
+  assert.equal(count(h, 'captureNative'), 0);
+  assert.equal(h.context.window.OrionSorter.getState().needsRecovery, false);
+  assert.equal(h.storage.orionSortCheckpoint.phase, 'accepted');
+  assert.match(h.status(), /Previous journal archived/);
+});
+test('idle prior recovery permits scope choice but held recovery freezes it', async () => {
+  const h = await harness({ nativeScope: true, noFocusedScope: true, journalPhase: 'prepared', nativeState: { modified: false, recovery: true } });
+  assert.equal(h.elements.window.disabled, true);
+  h.elements.recoveryConfirmed.checked = true;
+  h.elements.window.value = '777';
+  h.elements.window.change();
+  assert.equal(h.elements.recoveryConfirmed.checked, true);
+  await h.click('inspectPrior');
+  assert.equal(count(h, 'captureNative'), 0);
 });

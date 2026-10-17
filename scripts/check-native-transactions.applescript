@@ -770,6 +770,63 @@ on run argv
         my assertTrue(((attributes's objectForKey:(current application's NSFilePosixPermissions)) as integer) is 384, "protected 0600 archive")
     end repeat
 
+    -- Actual shipped recoveryJournal retires only completed native-session sorts.
+    -- Model a new process with no context/identity, keeping the applied live tree.
+    my resetFixture()
+    my applyFixture()
+    set previousMoveCalls to my moveCalls
+    my clearTransaction()
+    set my contextItems to missing value
+    set my persistentIdentity to missing value
+    set my sessionKey to missing value
+    set originalData to current application's NSData's dataWithContentsOfFile:journalPath
+    my assertStatus("idle", false, true, "applied")
+    set resolved to my performCommand("recoveryJournal", current application's NSDictionary's dictionary())
+    my assertTrue(((resolved's objectForKey:"phase") as text) is "accepted", "completed prior native session retired")
+    my assertStatus("idle", false, false, "accepted")
+    my assertLayout(my fixtureApplied)
+    my assertTrue(my moveCalls is previousMoveCalls, "startup retirement made no moves")
+    my assertTrue((resolved's objectForKey:"recovered") is missing value, "retirement does not claim restoration")
+    set archivePath to resolved's objectForKey:"archive"
+    my assertTrue((originalData's isEqualToData:(current application's NSData's dataWithContentsOfFile:archivePath)) as boolean, "completed prior journal preserved byte exactly")
+    my assertTrue((my production_archiveFilePermissions(archivePath) as integer) is 384, "completed prior archive protected")
+    set repeated to my performCommand("recoveryJournal", current application's NSDictionary's dictionary())
+    my assertTrue((resolved's isEqualToDictionary:repeated) as boolean, "repeat normalization keeps same resolution")
+
+    repeat with phaseName in {"prepared", "undoing", "rollingBack", "recoveryRequired"}
+        my previousJournal(contents of phaseName)
+        set originalData to current application's NSData's dataWithContentsOfFile:journalPath
+        my performCommand("recoveryJournal", current application's NSDictionary's dictionary())
+        my assertStatus("idle", false, true, contents of phaseName)
+        my assertTrue((originalData's isEqualToData:(current application's NSData's dataWithContentsOfFile:journalPath)) as boolean, "unfinished journal not retired")
+        my assertTrue(my moveCalls is 0, "unfinished normalization made no moves")
+    end repeat
+
+    my resetFixture()
+    my applyFixture()
+    set originalData to current application's NSData's dataWithContentsOfFile:journalPath
+    my performCommand("recoveryJournal", current application's NSDictionary's dictionary())
+    my assertStatus("applied", true, false, "applied")
+    my assertTrue((originalData's isEqualToData:(current application's NSData's dataWithContentsOfFile:journalPath)) as boolean, "retained same-process journal not retired")
+
+    repeat with failingStage in {"archive", "resolution"}
+        my previousJournal("applied")
+        set originalData to current application's NSData's dataWithContentsOfFile:journalPath
+        if contents of failingStage is "archive" then
+            set my archiveFailure to true
+        else
+            set my resolutionFailure to true
+        end if
+        my expectFailure("recoveryJournal")
+        my assertStatus("idle", false, true, "applied")
+        my assertTrue((originalData's isEqualToData:(current application's NSData's dataWithContentsOfFile:journalPath)) as boolean, "failed retirement keeps journal")
+        my assertTrue(my moveCalls is 0, "failed retirement made no moves")
+        set my archiveFailure to false
+        set my resolutionFailure to false
+        my performCommand("recoveryJournal", current application's NSDictionary's dictionary())
+        my assertStatus("idle", false, false, "accepted")
+    end repeat
+
     -- Prior-session acknowledgment is explicit and never maps old IDs to live tabs.
     repeat with phaseName in {"prepared", "undoing", "rollingBack", "recoveryRequired"}
         set payload to my previousJournal(contents of phaseName)
@@ -875,5 +932,5 @@ on run argv
         set refused to true
     end try
     my assertTrue(refused, "mixed runtime configuration refused")
-    return "Shipped transaction handlers: " & my assertionCount & " assertions passed (success, partial moves, all journal boundaries, retained recovery, Keep divergence, protected abandonment/retry and explicit prior-session acknowledgment). No Orion was loaded or changed."
+    return "Shipped transaction handlers: " & my assertionCount & " assertions passed (success, partial moves, all journal boundaries, retained recovery, Keep divergence, protected abandonment/retry completed-session retirement and explicit prior-session acknowledgment). No Orion was loaded or changed."
 end run

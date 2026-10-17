@@ -2,7 +2,7 @@
 
 ## Controller and bridge
 
-`extension/sorter.html` is the controller document. Its JavaScript reads the selected scope, obtains a proposed plan from the configured provider, validates the result, renders the preview, and sends explicit native commands. The current package has no diagnostic background page.
+`extension/sorter.html` is the controller document. Auto performs capture, proposal and guarded Apply from one user action; Advanced exposes the same controller through Read, Review and Apply. Its JavaScript reads the selected scope, obtains a proposed plan from the configured provider, validates the result, renders the preview, and sends explicit native commands. The current package has no diagnostic background page.
 
 `native/Bridge.applescript` registers the versioned R49 NSObject-derived AppleScriptObjC delegate through Orion's in-process programmable-button executor. The generated loader retains it in a hidden native menu item, allowing the controller document to reload without discarding Undo state. A `WKScriptMessageHandler` connects the configured extension origin to that delegate. Main-frame origin, payload and command guards reject unrelated callers.
 
@@ -40,7 +40,7 @@ Replies include `transactionPhase`, durable `journalPhase`, `canUndo` and `needs
 
 ### Controller integration for recovery
 
-These native commands are implemented; controller UI wiring is separate work. No automatic retry or acknowledgment is scheduled.
+The sidebar wires these commands through its Recovery controls: inspect retained state or a prior journal, review the consequences, then explicitly confirm the matching resolution. Confirmation is bound to that inspection and invalidated by scope changes or failed resolution. No automatic retry or acknowledgment is scheduled.
 
 - `transactionStatus`: returns the same state fields used in every bridge reply.
 - `recoverRetained`: requires a fresh snapshot's `expectedRevision` and explicit `target: "original"` or `"applied"`. Available for retained failed/pending transactions in this process; the applied target requires a previously verified applied snapshot. It retries compensation and clears evidence only after verified restoration and a successful final journal write. If a fresh snapshot cannot prove object membership/page state, recovery stays blocked.
@@ -109,7 +109,7 @@ The existing `recover` command still requires verified UUID membership, scope, r
 
 ### Isolated verification
 
-`scripts/check-native-transactions.py` extracts the shipped `performCommand` and all transaction/recovery handlers without rewriting their decisions. Synthetic boundaries replace snapshot inspection, native layout/root moves, supported-host/private scope acquisition and individual fault-injected filesystem calls; production node validation, journal/evidence encoding, archive decisions, protected byte verification and resolution writes run against Foundation objects and temporary files. The suite covers both original regressions, every transaction journal boundary, compensation failure, retained recovery, Keep divergence, explicit abandonment with unavailable snapshots, stale confirmation bindings, every abandonment filesystem failure/retry, fresh capture guards, prior-session acknowledgment and exact installer guards. It does not load Orion or prove private native move, capture or lifetime behavior.
+`scripts/check-native-transactions.py` extracts the shipped `performCommand` and all transaction/recovery handlers without rewriting their decisions. Synthetic boundaries replace snapshot inspection, native layout/root moves, supported-host/private scope acquisition and individual fault-injected filesystem calls; production node validation, journal/evidence encoding, archive decisions, protected byte verification and resolution writes run against Foundation objects and temporary files. The suite covers both original regressions, every transaction journal boundary, compensation failure, retained recovery, Keep divergence, explicit abandonment with unavailable snapshots, stale confirmation bindings, every abandonment filesystem failure/retry, fresh capture guards, completed-session retirement, prior-session acknowledgment and exact installer guards. It does not load Orion or prove private native move, capture or lifetime behavior.
 
 The two original regressions were reproduced against the baseline before source edits: a partial Undo was not compensated, and a failed `rollingBack` journal write skipped Apply restoration.
 

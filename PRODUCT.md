@@ -16,7 +16,7 @@ A compact English utility for organizing existing tabs in Orion’s native verti
 
 ## Positioning
 
-Preserve native tab objects, pinned tabs, selection, navigation history, sibling order and expansion guarantees. Make connection, target group, progress, Undo and unresolved recovery understandable. No marketing surface, manual tree editing, unsupported row menus, favicon requests or startup service.
+Preserve native tab objects, pinned tabs, selection, navigation history and expansion guarantees; planned Apply may reorder siblings, while Undo restores their original order. Make connection, target group, progress, Undo and unresolved recovery understandable. No marketing surface, manual tree editing, unsupported row menus, favicon requests or startup service.
 
 ## Operating Context
 
@@ -26,7 +26,7 @@ The native integration runs on demand on macOS, restricted to Orion 1.1.3 build 
 
 - Auto keeps the hierarchy and guided controls hidden, with one action slot near the group/progress and no forced empty viewport; show honest phase/batch progress, never an invented overall percentage or time estimate.
 - Advanced uses one contextual Read/Review/Apply primary with status above a viewport-fitted tree and compact secondary controls. It shows current/proposed title/domain rows, changed-row markers, duplicate occurrence hints, local collapse and keyboard search retaining ancestor context. Preview interaction never edits Orion.
-- A visible selected group is frozen for each operation. Auto starts with the focused native group; unresolved Undo/recovery prevents scope switching.
+- A visible selected group is frozen for each operation. Auto starts with the focused native group; held native transactions and unknown outcomes prevent scope switching. Idle prior-session recovery allows explicit scope selection for inspection.
 - No-change results never Apply. After verified Apply, offer Undo and quiet Keep this order. Mode changes cannot discard transaction evidence or bypass operation locks.
 - Cancellation applies to proposal work only. Native Apply, Undo and recovery cannot be cancelled midway.
 - A mutation timeout means unknown outcome: bounded read-only reconciliation, no replay, and no unlock from an unrelated phase/status. Await the exact late request reply; allow read-only inspection.
