@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Разобрать вкладки</title><link rel="stylesheet" href="sorter.css"></head>
+<body>
+  <main>
+    <header><h1>Разобрать вкладки</h1><p>Порядок сначала покажем. Вкладки изменятся только после подтверждения.</p></header>
+    <div class="scope"><label for="window">Окно / текущая группа</label><div class="scope-row"><select id="window"></select><button id="refresh" aria-label="Обновить список окон" title="Обновить список окон">↻</button></div></div>
+    <div class="actions"><button id="read">Прочитать дерево</button><button id="organize" class="primary">Предложить порядок</button></div>
+    <p id="journalNotice" role="status" hidden></p>
+    <p id="status" role="status" aria-live="polite">Подключаюсь к Orion…</p>
+    <section aria-label="Предпросмотр"><h2 id="preview-title">Предпросмотр</h2><pre id="preview">Выбери окно и прочитай дерево.</pre></section>
+    <div class="commit"><button id="apply" class="primary" disabled>Применить</button><button id="undo" disabled>Undo</button></div>
+    <button id="keep" disabled title="Завершить сортировку и освободить Undo для следующей">Оставить порядок</button>
+    <p class="disclosure">AI получит названия, адреса и связи обычных вкладок. Закреплённые вкладки сохраняются.</p>
+    <details><summary>Настройки AI</summary>
+      <label for="endpoint">Адрес API</label><input id="endpoint" type="url" value="https://openrouter.ai/api/v1" spellcheck="false">
+      <label for="model">Модель</label><input id="model" value="anthropic/claude-sonnet-5.5" spellcheck="false">
+      <label for="key">API-ключ · macOS Keychain</label><input id="key" type="password" autocomplete="off" spellcheck="false">
+      <p id="keyStatus" role="status"></p>
+      <label for="depth">Глубина дерева</label><select id="depth"><option value="2">2 уровня</option><option value="3" selected>3 уровня</option><option value="4">4 уровня</option></select>
+      <label class="check"><input id="preserve" type="checkbox" checked>Сохранять существующие связи</label>
+      <button id="save">Сохранить настройки</button>
+    </details>
+    <details><summary>Восстановление</summary><p>Undo хранится в текущем процессе Orion. Завершённая сортировка сохраняется после перезапуска. Журнал прежнего моста можно проверить ниже.</p><div class="actions"><button id="recoveryPreview">Проверить журнал</button><button id="recover" disabled>Восстановить</button><button id="acceptCurrent" disabled>Оставить текущее дерево</button></div></details>
+    <details class="help"><summary>Как это работает</summary><p>Открой нужную группу и вертикальную панель вкладок Orion. Все вкладки читаются напрямую, включая спящие и дубли, без переключения страниц. AI получает только названия, адреса и связи.</p><p>После применения доступен точный Undo. Нажми «Оставить порядок», чтобы завершить сортировку и перейти к другой группе. После перезапуска Orion готовый порядок сохраняется, а Undo завершается.</p></details>
+  </main>
+  <script src="api.js"></script><script src="tree-plan.js"></script><script src="recovery.js"></script><script src="ai-provider.js"></script><script src="provider-settings.js"></script><script src="persistent-identity.js"></script>
+<script src="sorter.js"></script>
+</body></html>

@@ -1,0 +1,22 @@
+# Private runtime state and local configuration
+state/
+evidence/
+backups/
+.env
+.env.*
+*.local.json
+*.memgraph
+*.sample.txt
+*.log
+
+# Generated artifacts
+build/
+dist/
+node_modules/
+coverage/
+__pycache__/
+*.py[cod]
+*.scpt
+*.zip
+*.bundle/
+.DS_Store
