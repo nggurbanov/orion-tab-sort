@@ -10,6 +10,7 @@ Selectors and URL parameters:
 - `fixture=outline|long|deep` (depth 8; exact duplicates and long titles)
 - `theme=light|dark`
 - `mode=auto|advanced` (`preview` starts in Advanced)
+- `chrome=0` hides only the synthetic controls for actual-viewport captures; product layout is unchanged
 
 Example: `/demo/?scenario=preview&fixture=long&theme=dark&mode=advanced`.
 

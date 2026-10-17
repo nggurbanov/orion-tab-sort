@@ -24,8 +24,8 @@ The native integration runs on demand on macOS, restricted to Orion 1.1.3 build 
 
 ## Capabilities and Constraints
 
-- Auto keeps the hierarchy and guided controls hidden; show honest phase/batch progress, never an invented overall percentage or time estimate.
-- Advanced shows current/proposed title/domain rows, changed-row markers, duplicate occurrence hints, local collapse and keyboard search retaining ancestor context. Preview interaction never edits Orion.
+- Auto keeps the hierarchy and guided controls hidden, with one action slot near the group/progress and no forced empty viewport; show honest phase/batch progress, never an invented overall percentage or time estimate.
+- Advanced uses one contextual Read/Review/Apply primary with status above a viewport-fitted tree and compact secondary controls. It shows current/proposed title/domain rows, changed-row markers, duplicate occurrence hints, local collapse and keyboard search retaining ancestor context. Preview interaction never edits Orion.
 - A visible selected group is frozen for each operation. Auto starts with the focused native group; unresolved Undo/recovery prevents scope switching.
 - No-change results never Apply. After verified Apply, offer Undo and quiet Keep this order. Mode changes cannot discard transaction evidence or bypass operation locks.
 - Cancellation applies to proposal work only. Native Apply, Undo and recovery cannot be cancelled midway.
