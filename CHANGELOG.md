@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix R49 bootstrap Boolean coercion so a fresh bridge connects instead of coercing its missing argument. Exercise the exact installer call in native success/refusal fixtures.
+
 ## 0.5.0
 
 - Auto default: one authorized native capture / AI proposal / guarded Apply; Advanced: guided Read / Review / Apply with the approved Outline hierarchy.
