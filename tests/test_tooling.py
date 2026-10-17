@@ -3,6 +3,9 @@ import contextlib
 import hashlib
 import importlib.util
 import io
+import json
+import plistlib
+import re
 from pathlib import Path
 import shutil
 import sys
@@ -25,6 +28,7 @@ def load(name):
 
 builder = load("build_runtime")
 packager = load("package_extension")
+transactions = load("check-native-transactions")
 
 
 class ToolingTests(unittest.TestCase):
@@ -51,6 +55,21 @@ class ToolingTests(unittest.TestCase):
                 with ZipFile(archive) as contents:
                     self.assertEqual(set(contents.namelist()), set(packager.FILES))
 
+    def test_transaction_fixture_executes_exact_shipped_command_handlers(self):
+        engine = (ROOT / "native/Bridge.applescript").read_text()
+        checks = (ROOT / "scripts/check-native-transactions.applescript").read_text()
+        fixture = transactions.fixture_source(engine, checks)
+        for name in ("performCommand", "compensateLayout", "recoverRetained", "acknowledgeCurrent", "recoverLayout", "transactionStatus"):
+            start = engine.index(f"    on {name}(")
+            end = engine.index(f"    end {name}", start) + len(f"    end {name}")
+            shipped = "\n".join(line.removeprefix("    ") for line in engine[start:end].splitlines())
+            self.assertEqual(fixture.count(shipped), 1, name)
+            self.assertEqual(fixture.count(f"on {name}("), 1, name)
+        with self.assertRaises(AssertionError):
+            transactions.fixture_source(engine.replace("    on applyLayout(", "    on renamedLayout("), checks)
+        # Both snapshot-derived reply flags are computed by the exercised state handler.
+        self.assertIn("replyObject's addEntriesFromDictionary:(my transactionStatus())", engine)
+
     @unittest.skipUnless(sys.platform == "darwin", "Compiles AppleScript using macOS")
     def test_runtime_compiles_escaped_paths_and_preserves_state(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -62,6 +81,20 @@ class ToolingTests(unittest.TestCase):
             self.assertEqual(journal.read_text(), '{"fixture":"preserve-me"}')
             for source in output.rglob("*.applescript"):
                 self.assertNotIn("@@", source.read_text())
+            revision = re.match(r"script OrionNativeTreeBridgeV3R(\d+)", (ROOT / "native/Bridge.applescript").read_text()).group(1)
+            bundle = output / f"native/OrionNativeTreeBridgeV3R{revision}.bundle"
+            metadata = plistlib.loads((bundle / "Contents/Info.plist").read_bytes())
+            self.assertEqual(metadata["CFBundleVersion"], revision)
+            self.assertEqual(metadata["CFBundleName"], f"OrionNativeTreeBridgeV3R{revision}")
+            self.assertEqual(json.loads((output / ".orion-tab-sort-runtime").read_text())["bridge"], f"R{revision}")
+            for generated in (output / "scripts").glob("*.applescript"):
+                self.assertIn(f"OrionNativeTreeHostV3R{revision}", generated.read_text())
+            archived = output / "state/native-session-undo.json.acknowledged-fixture"
+            archived.write_text("synthetic archived recovery evidence")
+            archived.chmod(0o600)
+            builder.build("a" * 32, output)
+            self.assertEqual(archived.read_text(), "synthetic archived recovery evidence")
+            self.assertEqual(archived.stat().st_mode & 0o777, 0o600)
             sentinel_dir = Path(directory) / "unrelated"
             sentinel_dir.mkdir()
             sentinel = sentinel_dir / "keep.txt"

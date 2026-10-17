@@ -1,4 +1,4 @@
-script OrionNativeTreeBridgeV3R48
+script OrionNativeTreeBridgeV3R49
     property parent : class "NSObject"
     property directNativeMode : false
     property capturedPinnedObjects : missing value
@@ -31,6 +31,11 @@ script OrionNativeTreeBridgeV3R48
     property contextItems : missing value
     property beforeSnapshot : missing value
     property appliedSnapshot : missing value
+    -- Phase is authoritative; snapshots alone never prove a completed operation.
+    property transactionPhase : "idle"
+    property transactionID : missing value
+    property partialSnapshot : missing value
+    property recoveryArchive : missing value
     property attachedControllers : missing value
     property reconnectTimer : missing value
     property connectionAttempts : 0
@@ -192,7 +197,7 @@ script OrionNativeTreeBridgeV3R48
             set processInfo to current application's NSProcessInfo's processInfo()
             set processID to processInfo's processIdentifier()
             set epochTime to nowDate's timeIntervalSince1970()
-            set heartbeatObject to current application's NSDictionary's dictionaryWithObjects:{processID, epochTime, "V3R48", "on-demand"} forKeys:{"pid", "timestamp", "host", "mode"}
+            set heartbeatObject to current application's NSDictionary's dictionaryWithObjects:{processID, epochTime, "V3R49", "on-demand"} forKeys:{"pid", "timestamp", "host", "mode"}
             set heartbeatData to current application's NSJSONSerialization's dataWithJSONObject:heartbeatObject options:0 |error|:(missing value)
             heartbeatData's writeToFile:"@@RUNTIME_ROOT@@/state/bridge-heartbeat.json" options:1 |error|:(missing value)
             set my lastHeartbeat to current application's NSDate's |date|()
@@ -276,7 +281,7 @@ script OrionNativeTreeBridgeV3R48
         set hostVersion to (hostBundle's objectForInfoDictionaryKey:"CFBundleShortVersionString") as text
         set hostBuild to (hostBundle's objectForInfoDictionaryKey:"CFBundleVersion") as text
         if hostID is not "com.kagi.kagimacOS" or hostVersion is not "1.1.3" or hostBuild is not "152" then error "Unsupported Orion build; native mutations disabled"
-        if my beforeSnapshot is not missing value then error "Undo the previous sort before selecting another scope"
+        if my transactionPhase is not "idle" or my beforeSnapshot is not missing value then error "Resolve the previous transaction before selecting another scope"
         if my captureToken is not missing value then error "Complete or cancel the pending identity capture first"
         set my nativeUUIDBindings to missing value
         set my exposureCandidates to missing value
@@ -287,9 +292,8 @@ script OrionNativeTreeBridgeV3R48
         if oldData is not missing value then
             set oldJournal to current application's NSJSONSerialization's JSONObjectWithData:oldData options:0 |error|:(missing value)
             if oldJournal is missing value then error "Unreadable recovery journal; refusing to overwrite it"
-            if ((oldJournal's objectForKey:"phase") as text) is in {"prepared", "applied", "undoing", "rollingBack"} then
-                -- Reading does not replace the unfinished journal. Apply remains blocked until explicit resolution.
-            end if
+            -- Reading does not replace unfinished evidence. Apply checks the
+            -- complete phase allowlist and stays blocked until explicit resolution.
         end if
         set metadata to payload's objectForKey:"tabs"
         set windowID to payload's objectForKey:"windowId"
@@ -688,12 +692,129 @@ script OrionNativeTreeBridgeV3R48
     end appendItem
 
     on writeJournal(phaseText, targetObject)
-        set journalObject to current application's NSMutableDictionary's dictionaryWithObjects:{1, phaseText, my beforeSnapshot, my sessionKey} forKeys:{"version", "phase", "before", "sessionKey"}
+        set journalObject to current application's NSMutableDictionary's dictionaryWithObjects:{2, phaseText, my beforeSnapshot, my sessionKey, my transactionID} forKeys:{"version", "phase", "before", "sessionKey", "transactionID"}
         if targetObject is not missing value then journalObject's setObject:targetObject forKey:"target"
+        if my appliedSnapshot is not missing value then journalObject's setObject:my appliedSnapshot forKey:"applied"
+        if my partialSnapshot is not missing value then journalObject's setObject:my partialSnapshot forKey:"partial"
+        if my recoveryArchive is not missing value then journalObject's setObject:my recoveryArchive forKey:"recoveryArchive"
         if my persistentIdentity is not missing value then journalObject's setObject:my persistentIdentity forKey:"identity"
         set jsonData to current application's NSJSONSerialization's dataWithJSONObject:journalObject options:2 |error|:(missing value)
+        if jsonData is missing value then error "Could not encode recovery journal"
         if not ((jsonData's writeToFile:journalPath options:1 |error|:(missing value)) as boolean) then error "Could not save recovery journal; operation stopped"
     end writeJournal
+
+    on clearTransaction()
+        set my beforeSnapshot to missing value
+        set my appliedSnapshot to missing value
+        set my partialSnapshot to missing value
+        set my transactionID to missing value
+        set my recoveryArchive to missing value
+        set my transactionPhase to "idle"
+    end clearTransaction
+
+    on rememberPartial()
+        try
+            set my partialSnapshot to my snapshot()
+        on error snapshotError
+            set my partialSnapshot to current application's NSDictionary's dictionaryWithObjects:{false, snapshotError} forKeys:{"verified", "snapshotError"}
+        end try
+    end rememberPartial
+
+    -- A durable write-ahead journal already exists. Logging errors must never
+    -- prevent compensation using the retained native objects.
+    on compensateLayout(targetSnapshot, finalPhase)
+        set my transactionPhase to "rollingBack"
+        my rememberPartial()
+        try
+            my writeJournal("rollingBack", targetSnapshot)
+        end try
+        try
+            set restored to my applyLayout(my movableNodes(targetSnapshot))
+            if not ((restored's isEqualToDictionary:targetSnapshot) as boolean) then error "Compensation verification mismatch"
+        on error restoreError
+            set my transactionPhase to "recoveryRequired"
+            my rememberPartial()
+            try
+                my writeJournal("recoveryRequired", targetSnapshot)
+            end try
+            return "layout partial or unverified: " & restoreError & "; retained recovery required"
+        end try
+        set my transactionPhase to "restoredJournalPending"
+        if finalPhase is "applied" then set my transactionPhase to "appliedJournalPending"
+        try
+            my writeJournal(finalPhase, restored)
+        on error journalError
+            return "layout restored and verified; journal I/O unresolved: " & journalError
+        end try
+        if finalPhase is "applied" then
+            set my transactionPhase to "applied"
+            set my partialSnapshot to missing value
+        else
+            my clearTransaction()
+        end if
+        return "layout restored and durably verified"
+    end compensateLayout
+
+    on recoverRetained(payload)
+        if my transactionPhase is not in {"recoveryRequired", "restoredJournalPending", "appliedJournalPending"} or my beforeSnapshot is missing value then error "No retained recovery to resolve"
+        set liveSnapshot to my snapshot()
+        if not (((payload's objectForKey:"expectedRevision")'s isEqual:(liveSnapshot's objectForKey:"revision")) as boolean) then error "Retained recovery preview changed"
+        set targetName to payload's objectForKey:"target"
+        if targetName is missing value then error "Choose original or applied recovery explicitly"
+        set targetName to targetName as text
+        set destination to my beforeSnapshot
+        set finalPhase to "rolledBack"
+        if targetName is "applied" then
+            if my appliedSnapshot is missing value then error "No verified applied layout retained"
+            set destination to my appliedSnapshot
+            set finalPhase to "applied"
+        else if targetName is not "original" then
+            error "Unknown retained recovery target"
+        end if
+        set outcome to my compensateLayout(destination, finalPhase)
+        if my transactionPhase is not in {"idle", "applied"} then error outcome
+        return current application's NSDictionary's dictionaryWithObjects:{true, outcome} forKeys:{"recovered", "resolution"}
+    end recoverRetained
+
+    on transactionStatus()
+        set canUndo to my transactionPhase is "applied" and my beforeSnapshot is not missing value and my appliedSnapshot is not missing value
+        set needsRecovery to my transactionPhase is not in {"idle", "applied"}
+        set journalPhase to "none"
+        set dataObject to current application's NSData's dataWithContentsOfFile:journalPath
+        if dataObject is not missing value then
+            set journalObject to current application's NSJSONSerialization's JSONObjectWithData:dataObject options:0 |error|:(missing value)
+            if journalObject is missing value then
+                set journalPhase to "unreadable"
+                set needsRecovery to true
+                set canUndo to false
+            else if not ((journalObject's isKindOfClass:(current application's NSDictionary)) as boolean) then
+                set journalPhase to "invalid"
+                set needsRecovery to true
+                set canUndo to false
+            else
+                set phaseObject to journalObject's objectForKey:"phase"
+                if phaseObject is missing value then
+                    set journalPhase to "invalid"
+                else
+                    set journalPhase to phaseObject as text
+                end if
+                if journalPhase is not in {"accepted", "acknowledged", "undone", "rolledBack", "recovered", "applied"} then set needsRecovery to true
+                if journalPhase is "applied" and my transactionPhase is "idle" then set needsRecovery to true
+                if canUndo then
+                    try
+                        my verifiedAppliedJournal(my snapshot())
+                    on error
+                        set canUndo to false
+                        set needsRecovery to true
+                    end try
+                end if
+            end if
+        else if my transactionPhase is not "idle" then
+            set canUndo to false
+            set needsRecovery to true
+        end if
+        return current application's NSDictionary's dictionaryWithObjects:{canUndo, needsRecovery, my transactionPhase, journalPhase} forKeys:{"canUndo", "needsRecovery", "transactionPhase", "journalPhase"}
+    end transactionStatus
 
     on validateNodes(nodes)
         set itemMap to item 5 of my contextItems
@@ -788,13 +909,7 @@ script OrionNativeTreeBridgeV3R48
                 outlineView's collapseItem:nativeItem
             end if
         end repeat
-        if my beforeSnapshot is not missing value then
-            if (my beforeSnapshot's objectForKey:"rootExpanded") as boolean then
-                outlineView's expandItem:rootItem
-            else
-                outlineView's collapseItem:rootItem
-            end if
-        end if
+        if my beforeSnapshot is not missing value then my restoreRootExpansion(my beforeSnapshot)
         set activeView to item 9 of my contextItems
         if not ((nativeWindow's currentTabView()'s isEqual:activeView) as boolean) then
             if not ((nativeWindow's orderedTabViews()'s containsObject:activeView) as boolean) then error "Original active view no longer belongs to the window"
@@ -819,6 +934,16 @@ script OrionNativeTreeBridgeV3R48
         end repeat
         return liveSnapshot
     end applyLayout
+
+    on restoreRootExpansion(snapshotObject)
+        set outlineView to item 2 of my contextItems
+        set rootItem to item 4 of my contextItems
+        if (snapshotObject's objectForKey:"rootExpanded") as boolean then
+            outlineView's expandItem:rootItem
+        else
+            outlineView's collapseItem:rootItem
+        end if
+    end restoreRootExpansion
 
     on movableNodes(snapshotObject)
         set nodes to current application's NSMutableArray's array()
@@ -1059,18 +1184,84 @@ script OrionNativeTreeBridgeV3R48
         return my persistentIdentity
     end readPersistentIdentity
 
+    on protectedJournalArchive(expectedData, suffixText)
+        set originalData to current application's NSData's dataWithContentsOfFile:journalPath
+        if originalData is missing value or not ((originalData's isEqualToData:expectedData) as boolean) then error "Journal changed before archive"
+        set archivePath to journalPath & suffixText & (current application's NSUUID's UUID()'s UUIDString() as text)
+        set fileManager to current application's NSFileManager's defaultManager()
+        if not ((fileManager's copyItemAtPath:journalPath toPath:archivePath |error|:(missing value)) as boolean) then error "Could not archive journal"
+        if not ((fileManager's setAttributes:(current application's NSDictionary's dictionaryWithObject:384 forKey:(current application's NSFilePosixPermissions)) ofItemAtPath:archivePath |error|:(missing value)) as boolean) then error "Could not protect journal archive"
+        set archiveData to current application's NSData's dataWithContentsOfFile:archivePath
+        if archiveData is missing value or not ((expectedData's isEqualToData:archiveData) as boolean) then error "Journal archive verification failed"
+        return archivePath
+    end protectedJournalArchive
+
     on archiveCompletedJournal(journalObject, reasonText)
-        set archivePath to journalPath & ".completed-" & (current application's NSUUID's UUID()'s UUIDString() as text)
-        if not ((current application's NSFileManager's defaultManager()'s copyItemAtPath:journalPath toPath:archivePath |error|:(missing value)) as boolean) then error "Could not archive completed sort"
+        if ((journalObject's objectForKey:"phase") as text) is not "applied" then error "Only a verified applied journal can be kept"
+        set originalData to current application's NSData's dataWithContentsOfFile:journalPath
+        set originalObject to current application's NSJSONSerialization's JSONObjectWithData:originalData options:0 |error|:(missing value)
+        if originalObject is missing value or not ((originalObject's isEqualToDictionary:journalObject) as boolean) then error "Completed journal changed"
+        set archivePath to my protectedJournalArchive(originalData, ".completed-")
         set resolved to journalObject's mutableCopy()
         resolved's setObject:"accepted" forKey:"phase"
         resolved's setObject:reasonText forKey:"resolution"
         resolved's setObject:archivePath forKey:"archive"
-        set dataObject to current application's NSJSONSerialization's dataWithJSONObject:resolved options:2 |error|:(missing value)
-        if not ((dataObject's writeToFile:journalPath options:1 |error|:(missing value)) as boolean) then error "Could not finalize completed sort"
-        current application's NSFileManager's defaultManager()'s setAttributes:(current application's NSDictionary's dictionaryWithObject:384 forKey:(current application's NSFilePosixPermissions)) ofItemAtPath:archivePath |error|:(missing value)
+        my saveResolvedJournal(resolved)
         return resolved
     end archiveCompletedJournal
+
+    on saveResolvedJournal(resolved)
+        set dataObject to current application's NSJSONSerialization's dataWithJSONObject:resolved options:2 |error|:(missing value)
+        if dataObject is missing value then error "Could not encode journal resolution"
+        if not ((dataObject's writeToFile:journalPath options:1 |error|:(missing value)) as boolean) then error "Could not finalize archived journal"
+    end saveResolvedJournal
+
+    on inspectJournal(payload)
+        set dataObject to current application's NSData's dataWithContentsOfFile:journalPath
+        if dataObject is missing value then error "No recovery journal"
+        set journalObject to current application's NSJSONSerialization's JSONObjectWithData:dataObject options:0 |error|:(missing value)
+        if journalObject is missing value then error "Unreadable recovery journal"
+        return current application's NSDictionary's dictionaryWithObjects:{journalObject, dataObject's base64EncodedStringWithOptions:0} forKeys:{"journal", "journalRevision"}
+    end inspectJournal
+
+    on acknowledgeCurrent(payload)
+        if my transactionPhase is not "idle" or my beforeSnapshot is not missing value or my appliedSnapshot is not missing value or my captureToken is not missing value then error "Resolve retained same-process state first"
+        set confirmed to payload's objectForKey:"confirmed"
+        if confirmed is missing value then error "Explicit user confirmation required"
+        if (current application's NSStringFromClass(confirmed's |class|()) as text) is not "__NSCFBoolean" then error "Explicit boolean confirmation required"
+        if not (confirmed as boolean) then error "Explicit user confirmation required"
+        set inspected to my inspectJournal(payload)
+        set journalObject to inspected's objectForKey:"journal"
+        if not (((payload's objectForKey:"expectedJournalRevision")'s isEqual:(inspected's objectForKey:"journalRevision")) as boolean) then error "Inspected journal changed"
+        set versionObject to journalObject's objectForKey:"version"
+        if versionObject is missing value then error "Journal version missing"
+        if not ((versionObject's isKindOfClass:(current application's NSNumber)) as boolean) then error "Invalid journal version"
+        if not ((versionObject's isEqualToNumber:1) as boolean) and not ((versionObject's isEqualToNumber:2) as boolean) then error "Unsupported journal version"
+        if not (((payload's objectForKey:"expectedJournalVersion")'s isEqual:versionObject) as boolean) then error "Journal version changed"
+        set oldIdentity to journalObject's objectForKey:"identity"
+        if oldIdentity is missing value then error "Journal identity missing"
+        if not ((oldIdentity's isKindOfClass:(current application's NSDictionary)) as boolean) then error "Invalid journal identity"
+        if not (((payload's objectForKey:"expectedJournalIdentity")'s isEqualToDictionary:oldIdentity) as boolean) then error "Journal identity changed"
+        if ((oldIdentity's objectForKey:"mode") as text) is not "native-session" then error "Prior native session identity required"
+        set oldSession to oldIdentity's objectForKey:"sessionKey"
+        if oldSession is missing value or my sessionKey is missing value then error "Cannot establish distinct native sessions"
+        if not ((oldSession's isKindOfClass:(current application's NSString)) as boolean) then error "Invalid journal session"
+        if (oldSession's |length|() as integer) is 0 then error "Journal session missing"
+        if (oldSession's isEqual:my sessionKey) as boolean then error "Cannot acknowledge retained same-process journal"
+        if ((journalObject's objectForKey:"phase") as text) is not in {"prepared", "undoing", "rollingBack", "recoveryRequired"} then error "Journal does not require prior-session acknowledgment"
+        set liveSnapshot to my snapshot()
+        if not (((payload's objectForKey:"expectedRevision")'s isEqual:(liveSnapshot's objectForKey:"revision")) as boolean) then error "Acknowledgment preview changed"
+        set originalData to current application's NSData's dataWithContentsOfFile:journalPath
+        if not (((originalData's base64EncodedStringWithOptions:0)'s isEqual:(inspected's objectForKey:"journalRevision")) as boolean) then error "Journal changed during acknowledgment"
+        set archivePath to my protectedJournalArchive(originalData, ".acknowledged-")
+        set resolved to journalObject's mutableCopy()
+        resolved's setObject:"acknowledged" forKey:"phase"
+        resolved's setObject:archivePath forKey:"archive"
+        resolved's setObject:"Current layout acknowledged; original restoration not verified" forKey:"resolution"
+        resolved's setObject:liveSnapshot forKey:"acknowledgedCurrent"
+        my saveResolvedJournal(resolved)
+        return resolved
+    end acknowledgeCurrent
 
     on recoveryJournal(payload)
         set dataObject to current application's NSData's dataWithContentsOfFile:journalPath
@@ -1088,7 +1279,7 @@ script OrionNativeTreeBridgeV3R48
     end recoveryJournal
 
     on acceptCurrentLayout(payload)
-        if my beforeSnapshot is not missing value then error "Use retained Undo before accepting a previous session"
+        if my transactionPhase is not "idle" or my beforeSnapshot is not missing value then error "Use retained Undo before accepting a previous session"
         set journalObject to my recoveryJournal(payload)
         if ((journalObject's objectForKey:"phase") as text) is not "applied" then error "Only a completed applied journal can be accepted"
         if my persistentIdentity is missing value then error "Verify fresh persistent UUIDs before accepting current tree"
@@ -1098,16 +1289,12 @@ script OrionNativeTreeBridgeV3R48
         set oldIdentity to journalObject's objectForKey:"identity"
         if oldIdentity is missing value then error "Journal persistent identity missing"
         if not (((oldIdentity's objectForKey:"windowUUID")'s isEqual:(my persistentIdentity's objectForKey:"windowUUID")) as boolean) then error "Select the original journal window before accepting its current tree"
-        set archivePath to journalPath & ".accepted-" & (current application's NSUUID's UUID()'s UUIDString() as text)
-        if not ((current application's NSFileManager's defaultManager()'s copyItemAtPath:journalPath toPath:archivePath |error|:(missing value)) as boolean) then error "Could not archive previous journal"
         set originalData to current application's NSData's dataWithContentsOfFile:journalPath
-        set archiveData to current application's NSData's dataWithContentsOfFile:archivePath
-        if not ((originalData's isEqualToData:archiveData) as boolean) then error "Journal archive verification failed"
+        set archivePath to my protectedJournalArchive(originalData, ".accepted-")
         set resolvedJournal to journalObject's mutableCopy()
         resolvedJournal's setObject:"accepted" forKey:"phase"
         resolvedJournal's setObject:archivePath forKey:"archivePath"
-        set dataObject to current application's NSJSONSerialization's dataWithJSONObject:resolvedJournal options:2 |error|:(missing value)
-        if not ((dataObject's writeToFile:journalPath options:1 |error|:(missing value)) as boolean) then error "Could not resolve archived journal"
+        my saveResolvedJournal(resolvedJournal)
         return current application's NSDictionary's dictionaryWithObjects:{true, archivePath} forKeys:{"accepted", "archivePath"}
     end acceptCurrentLayout
 
@@ -1119,7 +1306,7 @@ script OrionNativeTreeBridgeV3R48
                 if not (((candidateIdentity's objectForKey:"sessionKey")'s isEqual:my sessionKey) as boolean) then error "Этот журнал относится к другой сессии Orion. Текущее дерево можно сохранить, восстановление по этим ID недоступно."
             end if
         end if
-        if my beforeSnapshot is not missing value then error "Use retained Undo for this process"
+        if my transactionPhase is not "idle" or my beforeSnapshot is not missing value then error "Use retained Undo or recovery for this process"
         set journalObject to my recoveryJournal(payload)
         if ((journalObject's objectForKey:"phase") as text) is not in {"prepared", "applied", "undoing", "rollingBack"} then error "Journal is already resolved"
         set oldIdentity to journalObject's objectForKey:"identity"
@@ -1177,38 +1364,30 @@ script OrionNativeTreeBridgeV3R48
                 if not (((oldUUIDByKey's objectForKey:oldParent)'s isEqual:(newUUIDByKey's objectForKey:newParent)) as boolean) then error "Recovery parent UUID differs"
             end if
         end repeat
-        -- Preserve the original journal before the first native mutation.
-        set archivePath to journalPath & ".recovery-" & (current application's NSUUID's UUID()'s UUIDString() as text)
-        if not ((current application's NSFileManager's defaultManager()'s copyItemAtPath:journalPath toPath:archivePath |error|:(missing value)) as boolean) then error "Could not archive recovery journal"
+        -- Archive and protect the previous evidence before a new write-ahead.
+        set originalData to current application's NSData's dataWithContentsOfFile:journalPath
+        set archivePath to my protectedJournalArchive(originalData, ".recovery-")
+        set my recoveryArchive to archivePath
         set my beforeSnapshot to liveSnapshot
+        set my transactionID to current application's NSUUID's UUID()'s UUIDString()
+        try
+            my writeJournal("prepared", planObject)
+        on error journalError
+            my clearTransaction()
+            error journalError
+        end try
+        set my transactionPhase to "applying"
         try
             set restored to my applyLayout(nodes)
-            set outlineView to item 2 of my contextItems
-            set rootItem to item 4 of my contextItems
-            if ((journalObject's objectForKey:"before")'s objectForKey:"rootExpanded") as boolean then
-                outlineView's expandItem:rootItem
-            else
-                outlineView's collapseItem:rootItem
-            end if
+            my restoreRootExpansion(journalObject's objectForKey:"before")
             set restored to my snapshot()
-            set resolvedJournal to journalObject's mutableCopy()
-            resolvedJournal's setObject:"recovered" forKey:"phase"
-            resolvedJournal's setObject:restored forKey:"recovered"
-            set dataObject to current application's NSJSONSerialization's dataWithJSONObject:resolvedJournal options:2 |error|:(missing value)
-            if not ((dataObject's writeToFile:journalPath options:1 |error|:(missing value)) as boolean) then error "Could not mark recovery complete"
-            set my beforeSnapshot to missing value
-            set my appliedSnapshot to missing value
-            return restored
+            my writeJournal("recovered", restored)
         on error errorText
-            try
-                set rolledBack to my applyLayout(my movableNodes(liveSnapshot))
-                if not ((rolledBack's isEqualToDictionary:liveSnapshot) as boolean) then error "Recovery rollback mismatch"
-                set my beforeSnapshot to missing value
-                error errorText & "; recovery cancelled and original live tree restored"
-            on error rollbackError
-                error errorText & "; journal retained: " & rollbackError
-            end try
+            set outcome to my compensateLayout(liveSnapshot, "rolledBack")
+            error errorText & "; " & outcome
         end try
+        my clearTransaction()
+        return restored
     end recoverLayout
 
     on credentialOrigin(payload)
@@ -1276,13 +1455,26 @@ script OrionNativeTreeBridgeV3R48
         return current application's NSDictionary's dictionaryWithObjects:{true, true} forKeys:{"ok", "saved"}
     end credentialCommand
 
+    on verifiedAppliedJournal(liveSnapshot)
+        if my transactionPhase is not "applied" or my beforeSnapshot is missing value or my appliedSnapshot is missing value then error "No verified operation"
+        if not ((liveSnapshot's isEqualToDictionary:my appliedSnapshot) as boolean) then error "Tree changed since sorting; operation refused"
+        set dataObject to current application's NSData's dataWithContentsOfFile:journalPath
+        if dataObject is missing value then error "Verified journal missing"
+        set journalObject to current application's NSJSONSerialization's JSONObjectWithData:dataObject options:0 |error|:(missing value)
+        if journalObject is missing value then error "Unreadable journal"
+        if ((journalObject's objectForKey:"phase") as text) is not "applied" then error "Journal is not verified applied state"
+        if not (((journalObject's objectForKey:"transactionID")'s isEqual:my transactionID) as boolean) then error "Journal transaction changed"
+        if not (((journalObject's objectForKey:"target")'s isEqualToDictionary:my appliedSnapshot) as boolean) then error "Journal applied layout changed"
+        return journalObject
+    end verifiedAppliedJournal
+
     on performCommand(commandName, payload)
         set commandName to commandName as text
         if commandName is "scopes" then return my nativeScopes(payload)
         if commandName is "captureNative" then return my captureNative(payload)
         if commandName is "nativeSessionIdentity" then return my nativeSessionIdentity(payload)
         if commandName is in {"loadKey", "saveKey"} then return my credentialCommand(commandName, payload)
-        if commandName is "ping" then return current application's NSDictionary's dictionaryWithObjects:{"AppleScriptObjC native tree V3R48", my reconnectError} forKeys:{"host", "reconnectError"}
+        if commandName is "ping" then return current application's NSDictionary's dictionaryWithObjects:{"AppleScriptObjC native tree V3R49", my reconnectError} forKeys:{"host", "reconnectError"}
         if commandName is "capture" then return my capture(payload)
         if commandName is "captureRecovery" then
             set my recoveryCapture to true
@@ -1307,30 +1499,36 @@ script OrionNativeTreeBridgeV3R48
         if commandName is "confirmExposure" then return my confirmExposure(payload)
         if commandName is "finishExposure" then return my finishExposure(payload)
         if commandName is "cancelCapture" then return my cancelCapture(payload)
+        if commandName is "inspectJournal" then return my inspectJournal(payload)
+        if commandName is "acknowledgeCurrent" then return my acknowledgeCurrent(payload)
+        if commandName is "recoverRetained" then return my recoverRetained(payload)
+        if commandName is "transactionStatus" then return my transactionStatus()
         if commandName is "keep" then
-            if my beforeSnapshot is missing value or my appliedSnapshot is missing value then error "No verified sort to keep"
-            set dataObject to current application's NSData's dataWithContentsOfFile:journalPath
-            set journalObject to current application's NSJSONSerialization's JSONObjectWithData:dataObject options:0 |error|:(missing value)
+            set journalObject to my verifiedAppliedJournal(my snapshot())
             my archiveCompletedJournal(journalObject, "Current verified sort kept")
-            set my beforeSnapshot to missing value
-            set my appliedSnapshot to missing value
+            my clearTransaction()
             return current application's NSDictionary's dictionaryWithObject:true forKey:"accepted"
         end if
         set liveSnapshot to my snapshot()
         if commandName is "snapshot" then return liveSnapshot
         if commandName is "undo" then
-            if my beforeSnapshot is missing value or my appliedSnapshot is missing value then error "No verified operation to undo"
-            if not ((liveSnapshot's isEqualToDictionary:(my appliedSnapshot)) as boolean) then error "Tree changed since sorting; Undo refused"
+            my verifiedAppliedJournal(liveSnapshot)
+            -- A failed write-ahead leaves the verified applied state untouched.
             my writeJournal("undoing", my beforeSnapshot)
-            set restored to my applyLayout(my movableNodes(my beforeSnapshot))
-            if not ((restored's isEqualToDictionary:(my beforeSnapshot)) as boolean) then error "Undo verification failed; journal retained"
-            my writeJournal("undone", restored)
-            set my beforeSnapshot to missing value
-            set my appliedSnapshot to missing value
+            set my transactionPhase to "undoing"
+            try
+                set restored to my applyLayout(my movableNodes(my beforeSnapshot))
+                if not ((restored's isEqualToDictionary:(my beforeSnapshot)) as boolean) then error "Undo verification failed"
+                my writeJournal("undone", restored)
+            on error errorText
+                set outcome to my compensateLayout(my appliedSnapshot, "applied")
+                error errorText & "; " & outcome
+            end try
+            my clearTransaction()
             return restored
         end if
         if commandName is not "apply" then error "Unsupported native command"
-        if my beforeSnapshot is not missing value then error "Undo the previous sort first"
+        if my transactionPhase is not "idle" or my beforeSnapshot is not missing value then error "Resolve the previous transaction first"
         if my persistentIdentity is missing value then error "Verify fresh persistent UUIDs before Apply"
         if not (((my persistentIdentity's objectForKey:"revision")'s isEqual:(liveSnapshot's objectForKey:"revision")) as boolean) then error "Tree changed after UUID verification"
         set planObject to payload's objectForKey:"plan"
@@ -1343,32 +1541,26 @@ script OrionNativeTreeBridgeV3R48
         if existingJournalData is not missing value then
             set existingJournal to current application's NSJSONSerialization's JSONObjectWithData:existingJournalData options:0 |error|:(missing value)
             if existingJournal is missing value then error "Unreadable journal"
-            if ((existingJournal's objectForKey:"phase") as text) is in {"prepared", "applied", "undoing", "rollingBack"} then error "Recovery journal must be resolved before a new Apply"
+            if ((existingJournal's objectForKey:"phase") as text) is not in {"accepted", "acknowledged", "undone", "rolledBack", "recovered"} then error "Recovery journal must be resolved before a new Apply"
         end if
         set my beforeSnapshot to liveSnapshot
+        set my transactionID to current application's NSUUID's UUID()'s UUIDString()
         try
             my writeJournal("prepared", planObject)
         on error journalError
-            set my beforeSnapshot to missing value
+            my clearTransaction()
             error journalError
         end try
+        set my transactionPhase to "applying"
         try
             set my appliedSnapshot to my applyLayout(nodes)
             my writeJournal("applied", my appliedSnapshot)
-            return my appliedSnapshot
         on error errorText
-            try
-                my writeJournal("rollingBack", my beforeSnapshot)
-                set restored to my applyLayout(my movableNodes(my beforeSnapshot))
-                if not ((restored's isEqualToDictionary:(my beforeSnapshot)) as boolean) then error "Rollback verification failed"
-                my writeJournal("rolledBack", restored)
-                set my beforeSnapshot to missing value
-                set my appliedSnapshot to missing value
-            on error rollbackError
-                error errorText & "; rollback incomplete: " & rollbackError & "; recovery journal retained"
-            end try
-            error errorText & "; original tree restored"
+            set outcome to my compensateLayout(my beforeSnapshot, "rolledBack")
+            error errorText & "; " & outcome
         end try
+        set my transactionPhase to "applied"
+        return my appliedSnapshot
     end performCommand
 
     on userContentController:contentController didReceiveScriptMessage:messageObject
@@ -1386,7 +1578,7 @@ script OrionNativeTreeBridgeV3R48
         if (requestID's |length|() as integer) > 80 then return
         set replyObject to current application's NSMutableDictionary's dictionaryWithObject:requestID forKey:"id"
         try
-            if (commandValue as text) is not in {"scopes", "captureNative", "nativeSessionIdentity", "ping", "loadKey", "saveKey", "capture", "captureRecovery", "refreshIdentity", "persistentIdentity", "acceptCurrent", "recoveryJournal", "recover", "selectIdentity", "confirmIdentity", "finishCapture", "selectExposure", "confirmExposure", "finishExposure", "cancelCapture", "snapshot", "apply", "undo", "keep"} then error "Unsupported command"
+            if (commandValue as text) is not in {"scopes", "captureNative", "nativeSessionIdentity", "ping", "loadKey", "saveKey", "capture", "captureRecovery", "refreshIdentity", "persistentIdentity", "acceptCurrent", "recoveryJournal", "recover", "selectIdentity", "confirmIdentity", "finishCapture", "selectExposure", "confirmExposure", "finishExposure", "cancelCapture", "snapshot", "apply", "undo", "keep", "inspectJournal", "acknowledgeCurrent", "recoverRetained", "transactionStatus"} then error "Unsupported command"
             set payload to requestBody's objectForKey:"payload"
             if payload is missing value then set payload to current application's NSDictionary's dictionary()
             set resultObject to my performCommand(commandValue as text, payload)
@@ -1396,8 +1588,7 @@ script OrionNativeTreeBridgeV3R48
             replyObject's setObject:false forKey:"ok"
             replyObject's setObject:errorText forKey:"error"
         end try
-        replyObject's setObject:(my beforeSnapshot is not missing value and my appliedSnapshot is not missing value) forKey:"canUndo"
-        replyObject's setObject:(my beforeSnapshot is not missing value and my appliedSnapshot is missing value) forKey:"needsRecovery"
+        replyObject's addEntriesFromDictionary:(my transactionStatus())
         my armCaptureWatchdog:(missing value)
         senderView's evaluateJavaScript:("window.OrionSorter.receive(" & my jsonText(replyObject) & ");") completionHandler:(missing value)
     end userContentController:didReceiveScriptMessage:
@@ -1518,7 +1709,7 @@ script OrionNativeTreeBridgeV3R48
 
     on captureNative(payload)
         my supportedHost()
-        if my beforeSnapshot is not missing value then error "Undo the previous sort before selecting another scope"
+        if my transactionPhase is not "idle" or my beforeSnapshot is not missing value then error "Resolve the previous transaction before selecting another scope"
         if my captureToken is not missing value then error "Complete or cancel the pending capture"
         set windowNumber to payload's objectForKey:"windowId"
         if windowNumber is missing value then error "Selected native window missing"

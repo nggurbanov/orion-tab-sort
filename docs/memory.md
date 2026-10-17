@@ -11,3 +11,9 @@ These are short-term observations. Individual AppleScriptObjC operations can sti
 A compiled Objective-C maintenance experiment completed 100,000 standalone scans without a reported leak, but Orion rejected the local module because its Team ID differed from the application's signer. Browser signing protections were left intact. That uninstalled experiment is not included in the current source package.
 
 Do not reintroduce a permanent AppleScriptObjC maintenance timer. Any replacement must pass both isolated lifetime checks and the actual signed-browser loading path before being described as a usable fix.
+
+## R49 retained native context
+
+R49 preserves R48's on-demand connection and one-shot watchdog behavior. Transaction completion releases the before/applied/partial snapshots and transaction metadata only after a verified, persisted resolution. A journal I/O failure or failed compensation keeps that evidence and the native context available for explicit recovery.
+
+The captured context, identity maps, pinned objects and view references can still be retained after a resolved transaction. Their safe release and reacquisition across real reconnect/capture paths has not been proven using the signed Orion runtime, so this change does not guess at cleanup. Foundation fixtures establish state handling and bounded timers, not browser-object lifetime. Do not clear retained references to force a revision upgrade, or claim R49 eliminates all operation-time retention. A separate live lifetime/reconnect acceptance check is still required.

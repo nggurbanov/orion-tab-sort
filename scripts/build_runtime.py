@@ -47,14 +47,14 @@ def build(extension_id, output, orion_state=None):
     # never copied, replaced or cleaned by this build operation.
     with tempfile.TemporaryDirectory(prefix="orion-sort-build-", dir=output.parent) as directory:
         stage = Path(directory)
-        resources = stage / "native/OrionNativeTreeBridgeV3R48.bundle/Contents/Resources"
+        resources = stage / "native/OrionNativeTreeBridgeV3R49.bundle/Contents/Resources"
         resources.mkdir(parents=True)
         (resources.parent / "Info.plist").write_bytes(plistlib.dumps({
-            "CFBundleIdentifier": "local.orion.native-tree-bridge-v3-r48",
-            "CFBundleName": "OrionNativeTreeBridgeV3R48", "CFBundlePackageType": "BNDL",
-            "CFBundleVersion": "48", "NSAppleScriptEnabled": True,
+            "CFBundleIdentifier": "local.orion.native-tree-bridge-v3-r49",
+            "CFBundleName": "OrionNativeTreeBridgeV3R49", "CFBundlePackageType": "BNDL",
+            "CFBundleVersion": "49", "NSAppleScriptEnabled": True,
         }))
-        engine = resources / "OrionNativeTreeBridgeV3R48.applescript"
+        engine = resources / "OrionNativeTreeBridgeV3R49.applescript"
         engine.write_text(render((ROOT / "native/Bridge.applescript").read_text(), values))
         (stage / "scripts").mkdir()
         for source, target in [("install-bridge.applescript", "install-sorter-bridge.applescript"), ("open-sidebar.applescript", "open-sorter-sidebar.applescript")]:
@@ -78,7 +78,7 @@ return scriptResult's stringValue() as text
                 shutil.copytree(path, destination, dirs_exist_ok=True)
             else:
                 shutil.copy2(path, destination)
-        marker.write_text(json.dumps({"bridge": "R48", "extensionId": extension_id}, indent=2) + "\n")
+        marker.write_text(json.dumps({"bridge": "R49", "extensionId": extension_id}, indent=2) + "\n")
         state = output / "state"
         state.mkdir(mode=0o700, exist_ok=True)
         state.chmod(0o700)
