@@ -24,7 +24,7 @@ test('repairs duplicate IDs once and returns only a locally validated plan', asy
 
 test('refuses repeated invalid proposals without an unbounded retry loop',async()=>{
   let calls=0;
-  await assert.rejects(provider.proposePlan(config,snapshot,{fetch:async()=>{calls++;return response([1,999]);}}),/дважды/);
+  await assert.rejects(provider.proposePlan(config,snapshot,{fetch:async()=>{calls++;return response([1,999]);}}),/twice/);
   assert.equal(calls,2);
 });
 
@@ -66,7 +66,7 @@ test('repairs malformed or empty output once through the real provider, never lo
   let calls=0;
   await assert.rejects(provider.proposePlan(config,snapshot,{fetch:async()=>{
     calls++;return {ok:true,status:200,json:async()=>({choices:[{message:{content:'not JSON'}}]})};
-  }}),/дважды/);
+  }}),/twice/);
   assert.equal(calls,2);
 });
 
@@ -256,6 +256,10 @@ test('an exhausted catalogue repair does not restart and repay the entire large 
  let calls=0;
  await assert.rejects(provider.proposePlan(config,many,{preserveExisting:false,fetch:async()=>{
   calls++;return {ok:true,status:200,json:async()=>({choices:[{finish_reason:'length',message:{content:null}}]})};
- }}),/дважды/);
+ }}),/twice/);
  assert.equal(calls,2);
+});
+test('aborting after an invalid plan prevents the repair request',async()=>{
+ const controller=new AbortController();let calls=0;
+ await assert.rejects(provider.proposePlan(config,snapshot,{signal:controller.signal,onInvalidProposal:()=>controller.abort(),fetch:async()=>{calls++;return response([1,999]);}}),e=>e.name==='AbortError');assert.equal(calls,1);
 });

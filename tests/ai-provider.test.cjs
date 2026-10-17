@@ -96,3 +96,30 @@ test('mandatory reasoning endpoint retries without disabling it, on the same mod
  await provider.propose({endpoint:'https://openrouter.ai/api/v1',model:'mandatory-reasoning-fixture'},[{id:101,title:'A',url:'https://example.com'},{id:102,title:'B',url:'https://example.com/b'}],{fetch});
  assert.deepEqual(requests[2].body.reasoning,{effort:'low'});
 });
+
+test('IPv6 loopback is rejected consistently with the manifest connection policy',()=>{
+ assert.throws(()=>provider.completionURL('http://[::1]:8080/v1'),/IPv6/);
+ assert.equal(provider.completionURL('http://localhost:8080/v1').hostname,'localhost');
+});
+test('pre-aborted proposal transmits nothing',async()=>{
+ const controller=new AbortController();controller.abort();let calls=0;
+ await assert.rejects(provider.propose(config,tabs,{signal:controller.signal,fetch(){calls++;}}),e=>e.name==='AbortError');assert.equal(calls,0);
+});
+test('external cancellation reaches the actual fetch signal and is distinct from timeout',async()=>{
+ const controller=new AbortController();let calls=0;
+ const work=provider.propose(config,tabs,{signal:controller.signal,fetch:async(url,request)=>{calls++;return new Promise((resolve,reject)=>request.signal.addEventListener('abort',()=>reject(new Error('fetch aborted')),{once:true}));}});
+ controller.abort();await assert.rejects(work,e=>e.name==='AbortError'&&!/timed out/.test(e.message));assert.equal(calls,1);
+});
+test('cancellation after a compatibility response prevents a retry transmission',async()=>{
+ const controller=new AbortController();let calls=0;
+ await assert.rejects(provider.propose(config,tabs,{signal:controller.signal,fetch:async()=>{calls++;return {status:400,ok:false,json:async()=>{controller.abort();return {error:{param:'response_format'}};}};}}),e=>e.name==='AbortError');assert.equal(calls,1);
+});
+test('cancellation between catalogue and batch classification stops all further calls',async()=>{
+ const controller=new AbortController();let calls=0;
+ const many=Array.from({length:25},(_,i)=>({id:i+1,title:'Project '+i,url:'https://example.com/'+i,parentId:null}));
+ await assert.rejects(provider.propose(config,many,{preserveExisting:false,signal:controller.signal,onProgress:p=>{if(p.phase==='classify')controller.abort();},fetch:async()=>{calls++;return {status:200,ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({topics:[{id:'p',name:'Project',parent:1}]})}}]})};}}),e=>e.name==='AbortError');assert.equal(calls,1);
+});
+test('internal timeout aborts actual fetch and is reported separately from user cancellation',async()=>{
+ let calls=0;
+ await assert.rejects(provider.propose(config,tabs,{timeoutMs:1,fetch:async(url,request)=>{calls++;return new Promise((resolve,reject)=>request.signal.addEventListener('abort',()=>reject(new Error('fetch aborted')),{once:true}));}}),e=>e.name!=='AbortError'&&/timed out/.test(e.message));assert.equal(calls,1);
+});

@@ -1,7 +1,7 @@
 /* global browser, chrome */
 (() => {
   const promiseAPI = typeof browser !== "undefined";
-  const api = promiseAPI ? browser : chrome;
+  const api = promiseAPI ? browser : typeof chrome !== "undefined" ? chrome : {};
   globalThis.probeAPI = {
     raw: api,
     call(scope, method, ...args) {

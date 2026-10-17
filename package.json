@@ -1,13 +1,16 @@
 {
   "name": "orion-tab-sort",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "private": true,
   "license": "MIT",
-  "description": "Preview and organize existing Orion tabs in the native vertical tree.",
+  "description": "Organize native Orion tabs in Auto or guided Advanced mode, with guarded Apply and Undo.",
   "scripts": {
     "test": "node --test tests/*.test.cjs && python3 -m unittest discover -s tests -p 'test_*.py'",
     "test:native": "python3 scripts/check-native-plan.py && python3 scripts/check-native-scope.py && python3 scripts/check-native-journal.py && python3 scripts/check-native-transactions.py && python3 scripts/check-on-demand-maintenance.py",
-    "package": "python3 scripts/package_extension.py"
+    "package": "python3 scripts/package_extension.py",
+    "demo": "python3 demo/server.py"
   },
-  "engines": { "node": ">=24" }
+  "engines": {
+    "node": ">=24"
+  }
 }

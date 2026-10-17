@@ -19,4 +19,6 @@ __pycache__/
 *.scpt
 *.zip
 *.bundle/
+*.bundle
+.impeccable/mocks/
 .DS_Store

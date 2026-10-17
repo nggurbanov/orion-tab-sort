@@ -5,8 +5,8 @@
     const endpoint=typeof value.endpoint==="string" ? value.endpoint.trim() : defaults.endpoint;
     const model=typeof value.model==="string" ? value.model.trim() : defaults.model;
     const depth=Number(value.maxDepth ?? 3);
-    if(!Number.isInteger(depth)||depth<1||depth>8)throw new Error("Глубина должна быть от 1 до 8.");
-    if(!model)throw new Error("Укажи модель AI.");
+    if(!Number.isInteger(depth)||depth<1||depth>8)throw new Error("Tree depth must be from 1 to 8.");
+    if(!model)throw new Error("Enter an AI model in settings.");
     const provider=typeof module==="object"&&module.exports ? require("./ai-provider.js") : root.OrionAIProvider;
     provider.completionURL(endpoint);
     return {endpoint,model,maxDepth:depth,preserveExisting:value.preserveExisting!==false};
