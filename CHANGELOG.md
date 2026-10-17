@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Give both sidebar modes a consistent 24 px top inset, wider side padding and more space below the heading row.
+
 - Fix R49 bootstrap Boolean coercion so a fresh bridge connects instead of coercing its missing argument. Exercise the exact installer call in native success/refusal fixtures.
 
 ## 0.5.0
