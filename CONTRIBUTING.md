@@ -20,4 +20,8 @@ Preserve active Undo/capture state. Runtime generation must never replace `state
 
 Edit `native/Bridge.applescript` and the templates under `native/templates/`. Run `scripts/build_runtime.py` to generate a local runtime; do not hand-edit and commit its compiled bundle. Keep only the current supported bridge in the source tree. Summarize relevant design decisions in `docs/` instead of adding copied investigation transcripts.
 
-The repository is currently private. A license and the outstanding live acceptance checks must be resolved before presenting it as a public release.
+Source is licensed under MIT, copyright 2026 nggurbanov. Keep experimental browser compatibility distinct from public source availability. A clean installation on another Mac, live Apply/Undo, restart/recovery and signed-browser lifetime checks remain separate acceptance work. Do not weaken signing or private build guards to make fixtures pass.
+
+The controller defaults to Auto and shares proposal safety with guided Advanced. Preserve this distinction in changes and tests. Cover actual orchestration with synthetic native/fetch boundaries, especially immutable endpoint/key pairs, cancellation, stale groups and unknown mutation outcomes. A timeout is never permission to retry or to unlock from a familiar transaction phase.
+
+Use `npm run demo` for browser review of the actual controller/tree view without Orion or network AI. Keep demo fixtures outside the extension allowlist; do not add dependencies for this purpose. Record exactly which 280/360/480 px, wide, theme, keyboard and reduced-motion checks occurred in [verification](docs/sidebar-verification.md). The design contract is [DESIGN.md](DESIGN.md).

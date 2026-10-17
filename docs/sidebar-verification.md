@@ -1,0 +1,25 @@
+# Sidebar source verification — 2026-10-17
+
+Prepared on isolated `feat/sidebar-modes`, starting at `adf15e8b17cba28193fecf3475af50e688f145ea`. No native implementation or native check scripts were changed. Parent-owned final native followup is integrated and verified separately; the controller contract was reviewed read-only against that final source.
+
+## Observed portable checks
+
+- Node 24: `npm test` — 126 JavaScript tests passed, no JS skips; Python reported 4 tests, OK with 1 macOS-only runtime compilation test skipped (3 executed).
+- Controller coverage includes Auto exactly-one Apply, Advanced no auto-Apply, unchanged/failed AI, missing/denied settings, native identities/duplicates, stale group/tree, immutable credentials across deferred native/permission replies, cancellation/stale progress, retained Undo, mode/duplicate-click guards, bounded diagnostics and sanitized errors.
+- Timeout coverage includes late success, unavailable reconciliation, partial mutation, timed-out Undo/Keep with pre-existing `applied` status, unrelated replies and late refusal. No phase-only unlock or automatic replay.
+- Recovery coverage includes exact inspected values, `journal.applied` availability, unavailable live state with explicit null, previous-session acknowledgment, failed-resolution confirmation invalidation and subsequent proposal after resolved recovery.
+- Actual tree renderer exercised with synthetic DOM boundaries: safe text, local SVGs, local collapse, ancestor-preserving depth-8 filter, duplicate distinctions and moved rows. All depth options 1–8 are represented in English markup.
+- `npm run package` passed. Two independent builds produced the same SHA-256: `ebde316af2b5b4224d79888c7f48b418f4d4577e5b5061c4d1b331afc9ca66ce`.
+- ZIP contains exactly 11 allowlisted sources: manifest, api, sorter HTML/CSS/JS, planner, tree view, provider, settings, identity and recovery. Demo, design references, private settings and caches are excluded.
+- Local Markdown references checked across 11 Markdown files: no missing targets. Full source credential/personal-path scan: no matches. All extension/demo JS parsed and git diff whitespace check passed.
+- Synthetic demo HTTP serves the actual UI/controller scripts on loopback `127.0.0.1:4877`; its CSP blocks network connections and images. Scenarios, themes and long/deep fixtures are documented in [demo](../demo/README.md).
+
+## Explicitly not established here
+
+`npm run test:native` and compiled synthetic runtime were skipped on Linux: macOS osascript/osacompile, Foundation and AppKit are required. Parent owns those checks after integrating native work; their reported results are not claimed as this executor’s runs.
+
+No browser automation or real DOM/browser acceptance was performed by this executor. Parent owns T3 preview visual/interaction review at 280/360/480 px and wide, light/dark, keyboard and reduced motion. Synthetic DOM tests do not replace that review.
+
+No real Orion state, tabs, installed runtime, credential or network AI was accessed. No app was restarted. A clean install on another Mac, signed-browser native mutation/Undo, restart/recovery behavior and lifetime/reconnect acceptance remain unverified.
+
+Existing GitHub Actions defines Linux test/package and macOS native/compilation jobs. No workflow run was started for these unpushed commits. No push, merge, publication or repository visibility change occurred.

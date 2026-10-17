@@ -1,38 +1,40 @@
 # Orion Tab Sort
 
-Organize existing tabs in Orion's native vertical tree, with an AI-generated preview, explicit Apply, and Undo.
+Organize existing tabs in Orion’s native vertical tree with **Auto** or guided **Advanced** mode, guarded Apply and Undo.
 
-**Status:** private development repository. The current bridge is R48 and runs on demand. The native integration is deliberately restricted to **Orion 1.1.3 (152) on macOS**. It uses private browser APIs and must be reviewed for each supported build. The controller UI is currently in Russian.
+**Experimental macOS integration, MIT licensed.** The R49 bridge is restricted to **Orion 1.1.3 (152)** and uses private APIs. Each additional browser build needs separate review. Automated fixtures and source availability do not establish compatibility on another Mac, a clean installation, or restart/recovery behavior.
 
-## Features
+## Use
 
-- Read the current native tab tree, including sleeping tabs and duplicate URLs.
-- Preview a proposed hierarchy before applying it to existing tab objects.
-- Preserve pinned tabs, selection, navigation history, order and expansion state.
-- Undo within the current browser process, or keep a finished sort and move to another group.
-- Inspect a recovery journal after interruption.
-- Use OpenRouter or a compatible API endpoint; store API keys in macOS Keychain.
+Open the target group and Orion’s vertical tab sidebar, then open **Native Tree Bridge**. The visible group selector identifies what will be organized.
 
-The bridge has no permanent background view scan or automatic startup agent. Click **Native Tree Bridge** when the sorter is needed. Existing native tab organization remains available without a running bridge.
+- **Auto**, the default: one **Organize tabs** click authorizes reading the selected group, asking AI for an order and guarded Apply. Honest phase/batch progress replaces a manual preview step. No-change results never Apply.
+- **Advanced**: **Read tree → Review with AI → Apply changes**. Search titles/domains and compare current/proposed hierarchy before applying. Preview collapse/search does not change Orion.
+- After verified Apply, use **Undo** to restore the original tree or **Keep this order** to finish the transaction. Finish it before switching groups. Cancellation is available only during proposal work, never native mutation.
+
+The native guards preserve tab objects, pinned tabs, selection, navigation history, sibling order and expansion. Sleeping tabs and duplicate URLs are included. These guarantees still require live acceptance against the supported signed browser; a passing synthetic fixture is not that proof.
+
+The bridge runs on demand, without a permanent background view scan or automatic startup agent.
 
 ## Development
 
-Requirements: Node.js 24+, Python 3, and macOS with Xcode Command Line Tools for the native checks and runtime compilation. There are no package dependencies to install.
+Requirements: Node.js 24+, Python 3; macOS with Xcode Command Line Tools for native fixtures/runtime compilation. No package dependencies.
 
 ```sh
 npm test
-npm run test:native       # macOS; isolated fixtures, no Orion automation
-npm run package           # creates dist/orion-tab-sort-0.4.5.zip
+npm run test:native       # macOS isolated fixtures; does not launch Orion
+npm run package           # dist/orion-tab-sort-0.5.0.zip
+npm run demo              # loopback synthetic UI: http://127.0.0.1:4877/demo/
 ```
 
-The JavaScript suite also runs on Linux. GitHub Actions runs JavaScript checks and the isolated macOS bridge checks. Automated tests do not establish full browser compatibility; live validation is a separate step.
+JavaScript and portable Python tests run on Linux. GitHub Actions defines Linux tests/package and macOS isolated native/compilation jobs. A local pass is not a completed GitHub Actions run. The [demo](demo/README.md) uses actual UI/controller scripts with synthetic transport/AI, isolated from the extension package and blocked from network connections.
 
-## Local setup
+## Installation
 
-1. Package the extension with `npm run package`.
-2. In Orion, use **Tools → Extensions → Install from Disk…** to install the generated ZIP.
-3. Find its extension ID. Open the extension controller and copy the 32-character host from `chrome-extension://<extension-id>/sorter.html`.
-4. Build a machine-local runtime, replacing the placeholder ID:
+1. Build the ZIP using `npm run package`.
+2. In Orion choose **Tools → Extensions → Install from Disk…** and select it.
+3. Open the extension controller. Its `chrome-extension://<extension-id>/sorter.html` host is the required 32-character extension ID.
+4. Generate a runtime with that ID on macOS:
 
    ```sh
    python3 scripts/build_runtime.py \
@@ -40,38 +42,33 @@ The JavaScript suite also runs on Linux. GitHub Actions runs JavaScript checks a
      --output "$HOME/Library/Application Support/OrionTabSort"
    ```
 
-5. Create an Orion **Programmable Button** named **Native Tree Bridge**, configured for AppleScript and sidebar output. Paste the generated `launcher.applescript` source into it.
-6. Open the target tab group and its native vertical sidebar. Click **Native Tree Bridge**, then **Прочитать дерево** (Read tree).
+5. Create an Orion **Programmable Button** named **Native Tree Bridge**, configured for AppleScript and sidebar output. Paste its generated `launcher.applescript` into the button.
+6. Open the desired group and vertical sidebar, click **Native Tree Bridge**, and configure AI endpoint/model/key in **AI settings**. Credentials save through macOS Keychain. Confirm the target group, then organize.
 
-The build only generates and compiles files; it does not start Orion, install the extension, alter browser preferences, or register a startup service. `--orion-state` can select another profile's `browser_state.plist` when needed. Do not move a configured runtime without rebuilding it, because generated paths point to its chosen location.
+Runtime generation compiles files; it does not start Orion, install the extension, alter preferences, register startup services or modify signing protections. `--orion-state` selects a different profile when needed. Generated paths are specific to the runtime location; rebuild before moving it. The controller requires R49 reply state; retained evidence inspection additionally requires the final R49 inspection/abandonment handlers.
 
-If a different bridge revision or configuration is already loaded, finish any pending Undo/capture and restart Orion manually before switching. Reopening the same runtime retains its current host and Undo data. Never discard runtime state to force an upgrade through.
+## Recovery and upgrades
 
-The source templates contain no user-specific paths or extension ID. Generated configuration, compiled scripts and recovery state stay outside Git.
+If an operation times out, its outcome is **unknown**. Do not repeat Apply/Undo/Keep. Mutations stay locked; reconnect and read-only inspection can reveal state but cannot correlate completion of the timed-out request. Only its exact late reply resolves that controller lock. Keep the evidence and report the unresolved operation if that reply never arrives.
 
-## Data flow
+**Recovery** offers guarded original-tree restoration, retained transaction inspection and previous-journal inspection. Acknowledge current layout and abandon Undo/recovery require an inspection and explicit consequence confirmation. They archive evidence and never claim original restoration. Abandonment moves no tabs and permanently ends that retained Undo/recovery; it can explicitly preserve an unavailable live observation. Unsupported or stale inspections refuse resolution. See [controller recovery](docs/controller.md).
 
-Reading and previewing are separate from applying a tree change. When an AI proposal is requested, the selected provider receives the selected ordinary tabs' titles, URLs and hierarchy. Pinned tabs, native identifiers, navigation history and API credentials are excluded from the proposal metadata. API keys are read from Keychain into memory for requests; they are not saved in extension settings.
+Before upgrading, finish or inspect any retained Undo/capture/recovery, preserve the runtime’s `state/` directory and its journal-adjacent archives, and rebuild from the reviewed source. Another already-loaded bridge revision/configuration is refused. A normal manual Orion restart may be needed to switch revisions; never discard state to force replacement. Completed order is intended to persist across restart; same-process Undo does not. Restart/upgrade acceptance on another Mac remains unverified.
 
-The local runtime's `state/` directory can contain private URLs and recovery information. Do not commit it or post it in an issue. Synthetic examples are sufficient for tests and most bug reports.
+## Privacy
 
-## Repository layout
+The selected provider receives ordinary tabs’ titles, URLs and parent relationships only after organization is requested. Pinned tabs, navigation history and native identity tokens are excluded. Tab data is untrusted input; returned plans are validated locally. Credentials go only to the frozen endpoint; requests omit cookies, reject redirects and do not cache. HTTP is permitted only for localhost/127.0.0.1; IPv6 loopback is unsupported.
 
-| Path | Purpose |
-| --- | --- |
-| `extension/` | Current controller, provider integration and tree planning |
-| `native/Bridge.applescript` | Current on-demand bridge source template |
-| `native/templates/` | In-process loader and sidebar launcher templates |
-| `scripts/` | Reproducible packaging, runtime generation and isolated checks |
-| `tests/` | JavaScript tests using synthetic browser data |
-| `docs/` | Architecture and known limitations |
+Keys load from origin-specific macOS Keychain into memory. They are excluded from extension settings, checkpoints and diagnostics. Local extension checkpoints and native runtime recovery journals can contain private URLs/snapshots. Never commit or upload them. Event diagnostics keep at most 24 action names; provider diagnostics at most 8 bounded metadata records. The UI uses local document SVGs and makes no favicon requests.
 
-Historical prototypes, native experiments rejected by Orion's signing policy, personal investigation logs, browser snapshots, backups and prebuilt binaries are intentionally not part of this repository.
+## Support and uninstall
 
-## Limitations and release readiness
+Report bugs in the repository’s Issues with the exact Orion/macOS build, controller version, operation and sanitized status. Prefer the synthetic demo; do not post real keys, browsing snapshots or recovery journals. Support is experimental for the guarded browser build, with no broad compatibility promise.
 
-R48 stops continuous bridge-driven idle leakage by removing its recurring scan and private QA poller. Individual AppleScriptObjC operations can still retain smaller amounts of memory. Previously leaked allocations may remain until a normal browser restart. This is containment, not a claim that all Orion or WebKit memory issues are repaired.
+To uninstall, resolve or explicitly inspect retained state first. Remove the extension and programmable button using Orion’s own controls. Keep a private copy of the configured runtime and recovery archives before choosing whether to remove them. Runtime generation installs no startup agent. If deleting a saved API key, remove only its matching `local.orion-tab-sort.ai.v1` Keychain service entry for that provider origin account using Keychain Access; do not erase unrelated credentials.
 
-Before a public release: select a license, verify a clean installation on another Mac, complete the live Apply/Undo and restart/recovery acceptance checks for the packaged source, and review supported browser versions. No open-source license has been selected yet.
+## Source
 
-See [architecture](docs/architecture.md), [memory behavior](docs/memory.md), and [contributing](CONTRIBUTING.md).
+[MIT license](LICENSE), copyright 2026 nggurbanov. `package.json` stays private to prevent accidental npm publication; that does not restrict the MIT source license. Public repository visibility is a separate owner action after review.
+
+See [contributing](CONTRIBUTING.md), [architecture](docs/architecture.md), [controller](docs/controller.md), [design](DESIGN.md), [verification](docs/sidebar-verification.md), [memory behavior](docs/memory.md) and [changelog](CHANGELOG.md). Machine-local configuration, binaries, personal snapshots and historical prototype workspaces are excluded.
