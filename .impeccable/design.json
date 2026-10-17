@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "direction": "Approved A Outline with user-confirmed Auto/Advanced modes",
+  "surface": "Compact English Orion native-tree utility sidebar",
+  "tokens": {
+    "light": {"background":"#f7f7f5","ink":"#202522","muted":"#626961","line":"#d8dcd5","field":"#ffffff","accent":"#315c48","accentInk":"#ffffff","hover":"#e8ede7","danger":"#85372d"},
+    "dark": {"background":"#232622","ink":"#f1f2ef","muted":"#b1b8ae","line":"#474d44","field":"#2c302b","accent":"#afcfbb","accentInk":"#17281d","hover":"#373e35","danger":"#f0b3a6"},
+    "fontFamily": "-apple-system, BlinkMacSystemFont, sans-serif",
+    "fontSize": {"heading":15,"bodyAndStandaloneField":13,"buttonLabelAndSearch":12,"modeRecoveryAndSecondary":11,"movedAndDuplicateHint":10,"narrowMovedHint":9},
+    "radius":{"default":5,"treeToggle":3,"joinedViewControlInner":0},"separatorWidth":1,"focusWidth":2,
+    "spacing":[4,6,8,10,12,14,18],"spacingScope":"Recurring layout-spacing subset; component-specific offsets also exist.","reviewWidths":[280,360,480,640],
+    "controlPadding":{"defaultButton":"7px 9px","field":"7px 8px","refresh":"6px","mode":"4px 5px","treeToggle":"3px 0","quietLeft":"0"}
+  },
+  "defaults":{"mode":"auto","theme":"system","scope":"focused native group"},
+  "constraints":["No cards, gradients, glass, decorative art or external fonts","No unsupported per-tab menus or favicon requests","Auto hides the hierarchy; Advanced shows guided Outline","Cancel generation only; unknown native mutation remains locked until its exact reply","Preserve native identity, pins, selection, history and tree guarantees"]
+}

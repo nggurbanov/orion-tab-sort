@@ -19,4 +19,10 @@ __pycache__/
 *.scpt
 *.zip
 *.bundle/
+*.bundle
+.impeccable/mocks/
 .DS_Store
+
+# Private planning and design exploration
+/plans/
+/.impeccable/questions/

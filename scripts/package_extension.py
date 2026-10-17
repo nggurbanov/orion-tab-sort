@@ -7,7 +7,7 @@ from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 ROOT = Path(__file__).resolve().parent.parent
 FILES = (
     "manifest.json", "api.js", "sorter.html", "sorter.css", "sorter.js",
-    "tree-plan.js", "recovery.js", "ai-provider.js", "provider-settings.js",
+    "tree-plan.js", "tree-view.js", "recovery.js", "ai-provider.js", "provider-settings.js",
     "persistent-identity.js",
 )
 

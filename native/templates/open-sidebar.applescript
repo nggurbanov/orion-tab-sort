@@ -42,7 +42,7 @@ set sourceText to current application's NSString's stringWithContentsOfFile:"@@R
 set scriptObject to current application's NSAppleScript's alloc()'s initWithSource:sourceText
 set {scriptResult, scriptError} to scriptObject's executeAndReturnError:(reference)
 if scriptResult is missing value then error (current application's NSDictionary's dictionaryWithDictionary:scriptError)'s description() as text
-set holder to current application's NSApplication's sharedApplication()'s mainMenu()'s itemWithTitle:"OrionNativeTreeHostV3R48"
+set holder to current application's NSApplication's sharedApplication()'s mainMenu()'s itemWithTitle:"OrionNativeTreeHostV3R49"
 set hostObject to holder's representedObject()
 if targetWindow is missing value or not ((targetWindow's respondsToSelector:"currentTabView") as boolean) then error "Open Native Tree Bridge from a browser window"
 if (targetWindow's currentTabView()'s URLString() as text) is "chrome-extension://@@EXTENSION_ID@@/sorter.html" then error "Open Native Tree Bridge from the window you want to sort"
